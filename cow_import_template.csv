@@ -1,0 +1,4 @@
+tag_id,calf_name,isFemale,breed,type,gaushalaId,shedNumber,dob,calf_weight,purchase_date,delivery_time,remark
+TAG-101,Gauri,true,Gir,Milking,6abcaebfd7556202004414a8,SH-01,2023-01-15,280,2023-05-10,06:30,Healthy and active milking cow
+TAG-102,Nandi,false,Kankrej,Dry,6abcaebfd7556202004414a8,SH-01,2022-11-20,350,2023-02-18,,Strong breeding bull
+TAG-103,Radha,true,Gir,Milking,6abcaebfd7556202004414a8,,2024-02-01,150,2024-03-01,07:00,Young calf

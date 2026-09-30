@@ -41,9 +41,20 @@ const schema = new Schema(
       type: Boolean,
     },
 
-    isDeleted: {
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+
+    isDelete: {
       type: Boolean,
       default: false,
+    },
+
+    deletedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
     },
 
     createdAt: {
@@ -87,6 +98,11 @@ const schema = new Schema(
       default: '',
     },
 
+    isDied: {
+      type: Boolean,
+      default: false,
+    },
+
     send_died_date: {
       type: String,
       default: '',
@@ -110,4 +126,4 @@ const schema = new Schema(
   }
 );
 
-module.exports = mongoose.models.Cow || mongoose.model('Cow', schema);
+module.exports = mongoose.model('Cow', schema);

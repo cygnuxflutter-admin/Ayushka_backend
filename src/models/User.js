@@ -46,14 +46,14 @@ const userSchema = new mongoose.Schema(
       default: null,
       trim: true,
     },
+    isActive: {
+      type: Boolean,
+      default: false,
+    },
     isDeleted: {
       type: Boolean,
       default: false,
       index: true,
-    },
-    isActive: {
-      type: Boolean,
-      default: false,
     },
     deletedBy: {
       type: mongoose.Schema.Types.ObjectId,

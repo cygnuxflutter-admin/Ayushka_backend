@@ -6,7 +6,7 @@ const Shed = require('../models/Shed');
 const BreedType = require('../models/BreedType');
 const Type = require('../models/Type');
 const User = require('../models/User');
-const Cow = require('../models/Cow');
+const Cow = require('../models/cow.model');
 const models = [
   Gaushala,
   Role,
