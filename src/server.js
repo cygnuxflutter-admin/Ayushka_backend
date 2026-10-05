@@ -1,11 +1,21 @@
+const path = require('node:path');
+// Ensure current working directory is the project root in IIS/iisnode
+try {
+  process.chdir(path.resolve(__dirname, '..'));
+} catch (chdirErr) {
+  console.error('Failed to set working directory:', chdirErr);
+}
+
 const http = require('node:http');
 const mongoose = require('mongoose');
 const app = require('./app');
 const connectDatabase = require('./config/database');
 const env = require('./config/env');
+const { seedDefaultModules } = require('./services/module.service');
 
 const startServer = async () => {
   await connectDatabase();
+  await seedDefaultModules().catch((err) => console.error('Failed to seed default modules:', err));
 
   const server = http.createServer(app);
   server.listen(env.port, () => {

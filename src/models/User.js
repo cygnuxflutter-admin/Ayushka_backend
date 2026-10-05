@@ -150,4 +150,13 @@ userSchema.methods.comparePassword = function comparePassword(candidate) {
   return bcrypt.compare(candidate, this.password);
 };
 
+userSchema.post('save', async function (doc) {
+  try {
+    const { assignDefaultPermissions } = require('../services/module.service');
+    await assignDefaultPermissions(doc._id);
+  } catch (err) {
+    console.error('Failed to assign default permissions in User post-save hook:', err);
+  }
+});
+
 module.exports = mongoose.model('User', userSchema);

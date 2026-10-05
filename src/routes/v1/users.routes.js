@@ -1,24 +1,21 @@
 const express = require('express');
 const userController = require('../../controllers/user.controller');
 const { validateAddUser, validateUpdateUser } = require('../../validators/user.validator');
-const adminOnly = require('../../middlewares/adminOnly');
+const checkPermission = require('../../middlewares/checkPermission');
 
 const router = express.Router();
 
-// Enforce Admin only for all user management endpoints
-router.use(adminOnly);
-
 // Read endpoints (Parent: /api/v1/users)
-router.get('/', userController.getUsers);
-router.get('/:id', userController.getUserById);
+router.get('/', checkPermission('USER', 'USER_LIST', 'view'), userController.getUsers);
+router.get('/:id', checkPermission('USER', 'USER_LIST', 'view'), userController.getUserById);
 
 // Write endpoints (Parent: /api/v1/users)
-router.post('/', adminOnly, validateAddUser, userController.addUser);
-router.post('/:id/update', adminOnly, validateUpdateUser, userController.updateUser);
-router.post('/:id/status', adminOnly, userController.toggleUserStatus);
-router.post('/:id/delete', adminOnly, userController.deleteUser);
-router.post('/:id/change-password', adminOnly, userController.changePassword);
-router.post('/:id/reset-password', adminOnly, userController.changePassword);
+router.post('/', checkPermission('USER', 'USER_LIST', 'add'), validateAddUser, userController.addUser);
+router.post('/:id/update', checkPermission('USER', 'USER_LIST', 'edit'), validateUpdateUser, userController.updateUser);
+router.post('/:id/status', checkPermission('USER', 'USER_LIST', 'edit'), userController.toggleUserStatus);
+router.post('/:id/delete', checkPermission('USER', 'USER_LIST', 'delete'), userController.deleteUser);
+router.post('/:id/change-password', checkPermission('USER', 'USER_LIST', 'edit'), userController.changePassword);
+router.post('/:id/reset-password', checkPermission('USER', 'USER_LIST', 'edit'), userController.changePassword);
 
 module.exports = router;
 

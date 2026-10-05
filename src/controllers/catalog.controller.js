@@ -3,16 +3,17 @@ const AppError = require('../utils/AppError');
 const asyncHandler = require('../utils/asyncHandler');
 const User = require('../models/User');
 const Gaushala = require('../models/Gaushala');
+const Cow = require('../models/cow.model');
 
-const createCatalogController = (Model, field, userReference, label) => {
+const createCatalogController = (Model, field, userReference, label, options = {}) => {
   const fields = Array.isArray(field) ? field : [field];
 
-  const readValues = (body) => {
+  const readValues = (body, req) => {
     const values = {};
     for (const fieldName of fields) {
       let value = body?.[fieldName];
       if ((fieldName === 'gaushalaId' || fieldName === 'gaushala_id') && (!value || typeof value !== 'string' || !value.trim())) {
-        value = body?.gaushalaId || body?.gaushala_id;
+        value = body?.gaushalaId || body?.gaushala_id || (req ? resolveGaushalaId(req, body) : null);
       }
       if (typeof value !== 'string' || !value.trim()) {
         throw new AppError(`${fieldName} is required`, 400);
@@ -60,6 +61,10 @@ const createCatalogController = (Model, field, userReference, label) => {
       const query = {};
       const gaushala = getFilterGaushalaId(req);
 
+      if (options?.requireGaushala && !gaushala) {
+        throw new AppError('Gaushala Id is required', 400);
+      }
+
       if (gaushala) {
         if (!mongoose.Types.ObjectId.isValid(gaushala)) {
           return res.status(400).json({
@@ -68,11 +73,16 @@ const createCatalogController = (Model, field, userReference, label) => {
             data: [],
           });
         }
+        const exists = await Gaushala.findById(gaushala);
+        if (!exists) {
+          throw new AppError('Gaushala not found', 404);
+        }
         if (Model.schema.paths.gaushalaId) query.gaushalaId = gaushala;
         if (Model.schema.paths.gaushala_id) query.gaushala_id = gaushala;
       }
 
-      let findQuery = Model.find(query).sort({ [fields[0]]: 1 });
+      const sortField = fields.find((f) => f !== 'gaushalaId' && f !== 'gaushala_id') || fields[0];
+      let findQuery = Model.find(query).sort({ [sortField]: 1 });
       if (Model.schema.paths.gaushalaId) {
         findQuery = findQuery.populate('gaushalaId', 'gaushalaName');
       }
@@ -85,7 +95,7 @@ const createCatalogController = (Model, field, userReference, label) => {
     }),
 
     create: asyncHandler(async (req, res) => {
-      const values = readValues(req.body);
+      const values = readValues(req.body, req);
       
       if (Model.schema.paths.gaushalaId) {
         const gaushala = values.gaushalaId || values.gaushala_id || resolveGaushalaId(req, req.body);
@@ -110,6 +120,20 @@ const createCatalogController = (Model, field, userReference, label) => {
           throw new AppError('Gaushala not found', 404);
         }
         values.gaushala_id = gaushala;
+      }
+
+      // Check duplicate within the same gaushala if gaushalaId is used
+      if (Model.schema.paths.gaushalaId && values.gaushalaId) {
+        const nameField = fields.find((f) => f !== 'gaushalaId' && f !== 'gaushala_id');
+        if (nameField && values[nameField]) {
+          const duplicate = await Model.findOne({
+            gaushalaId: values.gaushalaId,
+            [nameField]: new RegExp(`^${values[nameField].trim()}$`, 'i'),
+          });
+          if (duplicate) {
+            throw new AppError(`${label} with name '${values[nameField]}' already exists in this Gaushala`, 409);
+          }
+        }
       }
 
       let record = await Model.create(values);
@@ -138,7 +162,7 @@ const createCatalogController = (Model, field, userReference, label) => {
     }),
 
     update: asyncHandler(async (req, res) => {
-      const values = readValues(req.body);
+      const values = readValues(req.body, req);
       
       if (Model.schema.paths.gaushalaId) {
         const gaushala = values.gaushalaId || values.gaushala_id || resolveGaushalaId(req, req.body);
@@ -164,6 +188,21 @@ const createCatalogController = (Model, field, userReference, label) => {
             throw new AppError('Gaushala not found', 404);
           }
           values.gaushala_id = gaushala;
+        }
+      }
+
+      // Check duplicate within the same gaushala if gaushalaId is used
+      if (Model.schema.paths.gaushalaId && values.gaushalaId) {
+        const nameField = fields.find((f) => f !== 'gaushalaId' && f !== 'gaushala_id');
+        if (nameField && values[nameField]) {
+          const duplicate = await Model.findOne({
+            gaushalaId: values.gaushalaId,
+            [nameField]: new RegExp(`^${values[nameField].trim()}$`, 'i'),
+            _id: { $ne: req.params.id },
+          });
+          if (duplicate) {
+            throw new AppError(`${label} with name '${values[nameField]}' already exists in this Gaushala`, 409);
+          }
         }
       }
 

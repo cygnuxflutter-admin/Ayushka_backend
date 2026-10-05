@@ -69,6 +69,11 @@ const seedDefaultData = async () => {
 };
 
 const connectDatabase = async () => {
+  if (!env.mongoUri) {
+    throw new Error(
+      'MongoDB connection URI is missing! Please configure MONGODB_URI (or MONGODB_URI_PRODUCTION / MONGODB_URI_TEST) in your .env file.',
+    );
+  }
   await mongoose.connect(env.mongoUri, { autoIndex: false });
   await mongoose.connection.createCollections();
   await Promise.all(models.map((model) => model.createIndexes()));

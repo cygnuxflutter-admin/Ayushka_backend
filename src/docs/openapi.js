@@ -1,3 +1,10 @@
+const moduleAndPermissionPaths = require('./modules.docs');
+const feedStockPaths = require('./feed.docs');
+const medicalStockPaths = require('./medical.docs');
+const treatmentPaths = require('./treatment.docs');
+const workerAndDepartmentPaths = require('./worker.docs');
+const milkPaths = require('./milk.docs');
+
 const apiErrorResponse = (description) => ({
   description,
   content: {
@@ -171,7 +178,6 @@ const openApiSpec = {
   },
   servers: [{ url: '/' }],
   tags: [
-    { name: 'Health' },
     { name: 'Authentication' },
     { name: 'Users' },
     { name: 'Roles' },
@@ -181,35 +187,14 @@ const openApiSpec = {
     { name: 'Types' },
     { name: 'Cows' },
     { name: 'Uploads' },
+    { name: 'Modules' },
+    { name: 'Permissions' },
+    { name: 'Feed Stock' },
+    { name: 'Medical Stock' },
+    { name: 'Staff & Departments' },
+    { name: 'Workers' },
   ],
   paths: {
-    '/api/v1/health': {
-      get: {
-        tags: ['Health'],
-        summary: 'Check API and database health',
-        operationId: 'getHealth',
-        responses: {
-          '200': {
-            description: 'The API and database are available.',
-            content: {
-              'application/json': {
-                schema: { $ref: '#/components/schemas/HealthResponse' },
-              },
-            },
-          },
-          '503': {
-            description: 'The database is unavailable.',
-            content: {
-              'application/json': {
-                schema: {
-                  $ref: '#/components/schemas/HealthUnavailableResponse',
-                },
-              },
-            },
-          },
-        },
-      },
-    },
     '/api/v1/auth/login': {
       post: {
         tags: ['Authentication'],
@@ -495,79 +480,6 @@ const openApiSpec = {
                     success: { type: 'boolean', enum: [true] },
                     message: { type: 'string', example: 'User fetched successfully' },
                     data: { $ref: '#/components/schemas/User' },
-                  },
-                },
-              },
-            },
-          },
-          '400': apiErrorResponse('Invalid User ID format.'),
-          '401': apiErrorResponse('A valid bearer token is required.'),
-          '403': apiErrorResponse('The authenticated user is not an Admin.'),
-          '404': apiErrorResponse('User not found.'),
-          '503': apiErrorResponse('Authorization is not configured.'),
-        },
-      },
-      put: {
-        tags: ['Users'],
-        summary: 'Update an existing user (Admin only)',
-        operationId: 'updateUser',
-        security: [{ BearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: { $ref: '#/components/schemas/UpdateUserRequest' },
-            },
-          },
-        },
-        responses: {
-          '200': {
-            description: 'User updated successfully.',
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  required: ['success', 'message', 'data'],
-                  properties: {
-                    success: { type: 'boolean', enum: [true] },
-                    message: { type: 'string', example: 'User updated successfully' },
-                    data: { $ref: '#/components/schemas/User' },
-                  },
-                },
-              },
-            },
-          },
-          '400': apiErrorResponse('Validation error or Invalid ObjectId format.'),
-          '401': apiErrorResponse('A valid bearer token is required.'),
-          '403': apiErrorResponse('The authenticated user is not an Admin.'),
-          '404': apiErrorResponse('User, Gaushala, or Role not found.'),
-          '409': apiErrorResponse('User with this email or username already exists.'),
-          '503': apiErrorResponse('Authorization is not configured.'),
-        },
-      },
-      delete: {
-        tags: ['Users'],
-        summary: 'Soft-delete a user (Admin only)',
-        operationId: 'deleteUser',
-        security: [{ BearerAuth: [] }],
-        responses: {
-          '200': {
-            description: 'User deleted successfully.',
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  required: ['success', 'message', 'data'],
-                  properties: {
-                    success: { type: 'boolean', enum: [true] },
-                    message: { type: 'string', example: 'User deleted successfully' },
-                    data: {
-                      type: 'object',
-                      properties: {
-                        id: { type: 'string' },
-                        isDeleted: { type: 'boolean', example: true },
-                      },
-                    },
                   },
                 },
               },
@@ -930,8 +842,8 @@ const openApiSpec = {
         },
       },
     },
-    '/api/v1/cows/{id}': {
-      put: {
+    '/api/v1/cows/{id}/update': {
+      post: {
         tags: ['Cows'],
         summary: 'Update an existing cow (Admin only)',
         operationId: 'updateCow',
@@ -1153,7 +1065,7 @@ const openApiSpec = {
         },
       },
     },
-    '/api/v1/cows/import': {
+    '/api/v1/cows/upload-excel': {
       post: {
         tags: ['Cows'],
         summary: 'Import multiple cows from an Excel or CSV file',
@@ -1480,6 +1392,12 @@ const openApiSpec = {
         },
       },
     },
+    ...moduleAndPermissionPaths,
+    ...feedStockPaths,
+    ...medicalStockPaths,
+    ...treatmentPaths,
+    ...workerAndDepartmentPaths,
+    ...milkPaths,
   },
   components: {
     securitySchemes: {
@@ -1641,36 +1559,6 @@ const openApiSpec = {
           updatedAt: { type: 'string', format: 'date-time' },
         },
         additionalProperties: true,
-      },
-      HealthResponse: {
-        type: 'object',
-        required: ['success', 'data'],
-        properties: {
-          success: { type: 'boolean', enum: [true] },
-          data: {
-            type: 'object',
-            properties: {
-              status: { type: 'string', enum: ['ok'] },
-              database: { type: 'string', enum: ['connected'] },
-              timestamp: { type: 'string', format: 'date-time' },
-            },
-          },
-        },
-      },
-      HealthUnavailableResponse: {
-        type: 'object',
-        required: ['success', 'data'],
-        properties: {
-          success: { type: 'boolean', enum: [false] },
-          data: {
-            type: 'object',
-            properties: {
-              status: { type: 'string', enum: ['unavailable'] },
-              database: { type: 'string', enum: ['disconnected'] },
-              timestamp: { type: 'string', format: 'date-time' },
-            },
-          },
-        },
       },
       ApiError: {
         type: 'object',

@@ -3,6 +3,7 @@ const User = require('../models/User');
 const Gaushala = require('../models/Gaushala');
 const Role = require('../models/Role');
 const AppError = require('../utils/AppError');
+const { assignDefaultPermissions } = require('./module.service');
 
 /**
  * Add a new user to the database.
@@ -42,6 +43,11 @@ const addUser = async (userData) => {
 
   // 5. Create user (password hashing is handled in User pre-save hook)
   const user = await User.create(userData);
+
+  // 5.1 Assign default false permissions across all modules
+  await assignDefaultPermissions(user._id).catch((err) => {
+    console.error('Failed to assign default permissions to new user:', err);
+  });
 
   // 6. Return populated user
   return await User.findById(user._id)

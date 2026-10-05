@@ -2,17 +2,34 @@ const mongoose = require('mongoose');
 
 const typeSchema = new mongoose.Schema(
   {
+    gaushalaId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Gaushala',
+      required: [true, 'Gaushala is required'],
+      index: true,
+    },
     typeName: {
       type: String,
       required: [true, 'Type name is required'],
       trim: true,
-      unique: true,
     },
   },
   {
     timestamps: true,
     id: false,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   },
 );
 
-module.exports = mongoose.model('Type', typeSchema);
+typeSchema.virtual('gaushala', {
+  ref: 'Gaushala',
+  localField: 'gaushalaId',
+  foreignField: '_id',
+  justOne: true,
+});
+
+// A Gaushala cannot have duplicate type names within the same gaushala
+typeSchema.index({ gaushalaId: 1, typeName: 1 }, { unique: true });
+
+module.exports = mongoose.models.Type || mongoose.model('Type', typeSchema);
