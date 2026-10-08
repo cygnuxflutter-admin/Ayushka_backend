@@ -8,6 +8,11 @@ const { isSuperAdmin, isAdmin } = require('../utils/roles');
 
 const createCatalogController = (Model, field, userReference, label, options = {}) => {
   const fields = Array.isArray(field) ? field : [field];
+  const isRoleModel =
+    label?.toLowerCase() === 'role' ||
+    Model.modelName === 'Role' ||
+    Boolean(options?.isRole);
+
 
   const readValues = (body, req) => {
     const values = {};
@@ -92,6 +97,11 @@ const createCatalogController = (Model, field, userReference, label, options = {
         if (Model.schema.paths.gaushala_id) query.gaushala_id = gaushala;
       }
 
+      // If this is the Role catalog and requester is not superadmin, exclude Superadmin role
+      if (isRoleModel && !isSuperAdmin(user)) {
+        query.roleName = { $not: /^super[\s_-]?admin$/i };
+      }
+
       const sortField = fields.find((f) => f !== 'gaushalaId' && f !== 'gaushala_id') || fields[0];
       let findQuery = Model.find(query).sort({ [sortField]: 1 });
       if (Model.schema.paths.gaushalaId) {
@@ -101,7 +111,12 @@ const createCatalogController = (Model, field, userReference, label, options = {
         findQuery = findQuery.populate('gaushala_id', 'gaushalaName');
       }
 
-      const records = await findQuery;
+      let records = await findQuery;
+
+      if (isRoleModel && !isSuperAdmin(user)) {
+        records = records.filter((r) => !isSuperAdmin(r));
+      }
+
       res.status(200).json({ success: true, data: records });
     }),
 
@@ -109,6 +124,12 @@ const createCatalogController = (Model, field, userReference, label, options = {
       const values = readValues(req.body, req);
 
       const user = req.user;
+      if (isRoleModel && !isSuperAdmin(user)) {
+        if (values.roleName && isSuperAdmin(values.roleName)) {
+          throw new AppError('Access denied: Cannot create Superadmin role', 403);
+        }
+      }
+
       if (user && !isSuperAdmin(user) && user.gaushalaId && (Model.schema.paths.gaushalaId || Model.schema.paths.gaushala_id)) {
         const userGaushalaStr = (user.gaushalaId._id || user.gaushalaId).toString();
         const providedGaushala = values.gaushalaId || values.gaushala_id;
@@ -183,6 +204,10 @@ const createCatalogController = (Model, field, userReference, label, options = {
       }
 
       const user = req.user;
+      if (isRoleModel && !isSuperAdmin(user) && isSuperAdmin(record)) {
+        throw new AppError(`${label} not found`, 404);
+      }
+
       if (user && !isSuperAdmin(user) && user.gaushalaId && (Model.schema.paths.gaushalaId || Model.schema.paths.gaushala_id)) {
         const userGaushalaStr = (user.gaushalaId._id || user.gaushalaId).toString();
         const recordGaushala = (record.gaushalaId?._id || record.gaushalaId || record.gaushala_id?._id || record.gaushala_id)?.toString();
@@ -199,6 +224,21 @@ const createCatalogController = (Model, field, userReference, label, options = {
       const values = readValues(req.body, req);
 
       const user = req.user;
+      if (isRoleModel) {
+        const existingRecord = await Model.findById(req.params.id);
+        if (!existingRecord) {
+          throw new AppError(`${label} not found`, 404);
+        }
+        if (!isSuperAdmin(user)) {
+          if (isSuperAdmin(existingRecord)) {
+            throw new AppError(`${label} not found`, 404);
+          }
+          if (values.roleName && isSuperAdmin(values.roleName)) {
+            throw new AppError('Access denied: Cannot assign Superadmin role', 403);
+          }
+        }
+      }
+
       if (user && !isSuperAdmin(user) && user.gaushalaId && (Model.schema.paths.gaushalaId || Model.schema.paths.gaushala_id)) {
         const userGaushalaStr = (user.gaushalaId._id || user.gaushalaId).toString();
         const existingRecord = await Model.findById(req.params.id);
@@ -286,6 +326,15 @@ const createCatalogController = (Model, field, userReference, label, options = {
       }
 
       const user = req.user;
+      if (isRoleModel) {
+        if (isSuperAdmin(record)) {
+          if (!isSuperAdmin(user)) {
+            throw new AppError(`${label} not found`, 404);
+          }
+          throw new AppError('Superadmin role cannot be deleted', 403);
+        }
+      }
+
       if (user && !isSuperAdmin(user) && user.gaushalaId && (Model.schema.paths.gaushalaId || Model.schema.paths.gaushala_id)) {
         const userGaushalaStr = (user.gaushalaId._id || user.gaushalaId).toString();
         const recordGaushala = (record.gaushalaId?._id || record.gaushalaId || record.gaushala_id?._id || record.gaushala_id)?.toString();

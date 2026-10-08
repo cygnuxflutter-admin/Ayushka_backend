@@ -4,7 +4,7 @@ const checkPermission = require('../../middlewares/checkPermission');
 const createCatalogController = require('../../controllers/catalog.controller');
 
 const router = express.Router();
-const controller = createCatalogController(Role, 'roleName', 'roleId', 'Role');
+const controller = createCatalogController(Role, 'roleName', 'roleId', 'Role', { isRole: true });
 
 router.get('/', checkPermission('ROLE', 'ROLE_LIST', 'view'), controller.list);
 router.post('/', checkPermission('ROLE', 'ROLE_LIST', 'add'), controller.create);

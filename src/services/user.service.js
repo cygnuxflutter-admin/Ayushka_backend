@@ -33,6 +33,10 @@ const addUser = async (userData, requester = null) => {
     throw new AppError('Role not found', 404);
   }
 
+  if (requester && !isSuperAdmin(requester) && isSuperAdmin(role)) {
+    throw new AppError('Access denied: You cannot assign Superadmin role', 403);
+  }
+
   // 3. Check for unique non-deleted email
   const existingEmail = await User.findOne({
     emailId: userData.emailId.toLowerCase(),
@@ -86,6 +90,13 @@ const updateUser = async (userId, updateData, requester = null) => {
     throw new AppError('User not found', 404);
   }
 
+  if (requester && !isSuperAdmin(requester) && existingUser.roleId) {
+    const targetRole = await Role.findById(existingUser.roleId);
+    if (targetRole && isSuperAdmin(targetRole)) {
+      throw new AppError('Access denied: You cannot update a Superadmin user', 403);
+    }
+  }
+
   if (requester && !isSuperAdmin(requester) && requester.gaushalaId) {
     const userGaushalaStr = (requester.gaushalaId._id || requester.gaushalaId).toString();
     const targetGaushalaStr = (existingUser.gaushalaId?._id || existingUser.gaushalaId)?.toString();
@@ -108,6 +119,9 @@ const updateUser = async (userId, updateData, requester = null) => {
     const role = await Role.findById(updateData.roleId);
     if (!role) {
       throw new AppError('Role not found', 404);
+    }
+    if (requester && !isSuperAdmin(requester) && isSuperAdmin(role)) {
+      throw new AppError('Access denied: You cannot assign Superadmin role', 403);
     }
   }
 
@@ -177,10 +191,16 @@ const getUsers = async (filterOptions = {}, requester = null) => {
     ];
   }
 
-  return await User.find(query)
+  let users = await User.find(query)
     .sort({ createdAt: -1 })
     .populate('gaushalaId', 'gaushalaName')
     .populate('roleId', 'roleName');
+
+  if (requester && !isSuperAdmin(requester)) {
+    users = users.filter((u) => !isSuperAdmin(u.roleId));
+  }
+
+  return users;
 };
 
 /**
@@ -203,6 +223,12 @@ const getUserById = async (userId, requester = null) => {
 
   if (!user) {
     throw new AppError('User not found', 404);
+  }
+
+  if (requester && !isSuperAdmin(requester)) {
+    if (user.roleId && isSuperAdmin(user.roleId)) {
+      throw new AppError('Access denied: You cannot view a Superadmin user', 403);
+    }
   }
 
   if (requester && !isSuperAdmin(requester) && requester.gaushalaId) {
@@ -236,6 +262,13 @@ const toggleUserStatus = async (userId, explicitActiveStatus, requester = null) 
 
   if (!user) {
     throw new AppError('User not found', 404);
+  }
+
+  if (requester && !isSuperAdmin(requester) && user.roleId) {
+    const targetRole = await Role.findById(user.roleId);
+    if (targetRole && isSuperAdmin(targetRole)) {
+      throw new AppError('Access denied: You cannot modify a Superadmin user', 403);
+    }
   }
 
   if (requester && !isSuperAdmin(requester) && requester.gaushalaId) {
@@ -280,6 +313,13 @@ const deleteUser = async (userId, deletedBy, requester = null) => {
 
   if (!user) {
     throw new AppError('User not found', 404);
+  }
+
+  if (requester && !isSuperAdmin(requester) && user.roleId) {
+    const targetRole = await Role.findById(user.roleId);
+    if (targetRole && isSuperAdmin(targetRole)) {
+      throw new AppError('Access denied: You cannot delete a Superadmin user', 403);
+    }
   }
 
   if (requester && !isSuperAdmin(requester) && requester.gaushalaId) {
@@ -365,6 +405,13 @@ const forgotPassword = async ({
 
     if (!user) {
       throw new AppError('User not found', 404);
+    }
+
+    if (requester && !isSuperAdmin(requester) && user.roleId) {
+      const targetRole = await Role.findById(user.roleId);
+      if (targetRole && isSuperAdmin(targetRole)) {
+        throw new AppError('Access denied: You cannot change a Superadmin\'s password', 403);
+      }
     }
   } else {
     // Non-admin user or unauthenticated user: oldPassword is required
