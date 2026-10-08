@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const AppError = require('../utils/AppError');
+const { isSuperAdmin, isAdmin } = require('../utils/roles');
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -25,12 +26,31 @@ const validateAddUser = (req, res, next) => {
   }
 
   const name = typeof body.name === 'string' ? body.name.trim() : '';
-  const gaushalaId =
+  let gaushalaId =
     typeof body.gaushalaId === 'string' && body.gaushalaId.trim()
       ? body.gaushalaId.trim()
       : typeof body.gaushala_id === 'string' && body.gaushala_id.trim()
         ? body.gaushala_id.trim()
         : '';
+
+  const user = req.user;
+  if (user) {
+    if (isSuperAdmin(user)) {
+      if (!gaushalaId && user.gaushalaId) {
+        gaushalaId = (user.gaushalaId._id || user.gaushalaId).toString();
+      }
+    } else if (user.gaushalaId) {
+      const userGaushalaStr = (user.gaushalaId._id || user.gaushalaId).toString();
+      if (gaushalaId && gaushalaId !== userGaushalaStr) {
+        const roleLabel = isAdmin(user) ? 'Admin' : 'User';
+        return next(
+          new AppError(`Access denied: ${roleLabel} can only add users to their assigned gaushala`, 403),
+        );
+      }
+      gaushalaId = userGaushalaStr;
+    }
+  }
+
   const roleId =
     typeof body.roleId === 'string' && body.roleId.trim()
       ? body.roleId.trim()
@@ -121,6 +141,15 @@ const validateUpdateUser = (req, res, next) => {
   }
 
   const sanitizedData = {};
+
+  const user = req.user;
+  if (user && !isSuperAdmin(user) && user.gaushalaId) {
+    const updatedGaushala = body.gaushalaId || body.gaushala_id;
+    if (updatedGaushala && updatedGaushala.toString().trim() !== (user.gaushalaId._id || user.gaushalaId).toString()) {
+      const roleLabel = isAdmin(user) ? 'Admin' : 'User';
+      return next(new AppError(`Access denied: ${roleLabel} can only update users within their assigned gaushala`, 403));
+    }
+  }
 
   if (body.name !== undefined) {
     if (typeof body.name !== 'string' || !body.name.trim()) {

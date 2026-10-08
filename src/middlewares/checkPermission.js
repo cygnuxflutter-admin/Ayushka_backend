@@ -2,14 +2,15 @@ const AppError = require('../utils/AppError');
 const asyncHandler = require('../utils/asyncHandler');
 const UserPermission = require('../models/UserPermission');
 const auth = require('./auth');
+const { isSuperAdmin, isAdmin, resolveUserGaushalaId } = require('../utils/roles');
 
 /**
  * Middleware to enforce module and sub-module action permissions (view, add, edit, delete).
  *
  * Rules:
- * 1. Admin Role (roleName: 'admin') -> Automatically bypasses all checks and has full access to all APIs.
- * 2. Regular User -> Looks up UserPermission in database and verifies if the user has permission
- *    for the given module, sub-module, and action.
+ * 1. Superadmin -> Full access across ALL gaushalas, modules, and actions without restrictions.
+ * 2. Admin -> Full access to all modules and actions, strictly scoped to their assigned gaushala.
+ * 3. Regular User -> Looks up UserPermission in database and strictly scoped to their assigned gaushala.
  *
  * @param {string} moduleCode - Code of module (e.g. 'COW', 'SHED', 'USER')
  * @param {string} subModuleCode - Code of sub-module (e.g. 'COW_LIST', 'SHED_TRANSFER')
@@ -24,13 +25,29 @@ const checkPermission = (moduleCode, subModuleCode, action) => {
         throw new AppError('Authentication required', 401);
       }
 
-      // 1. ADMIN BYPASS: Admin has full access to all APIs without restrictions
-      const roleName = user.roleId?.roleName?.trim().toLowerCase();
-      if (roleName === 'admin') {
+      // 1. SUPERADMIN BYPASS: Unrestricted access across ALL gaushalas, modules, and actions
+      if (isSuperAdmin(user)) {
         return next();
       }
 
-      // 2. REGULAR USER: Check user-specific permissions
+      // For non-superadmin: enforce gaushala scoping on gaushala-scoped modules
+      const globalModules = ['ROLE', 'BREED_TYPE', 'TYPE', 'GAUSHALA'];
+      const isGaushalaScopedModule = !globalModules.includes((moduleCode || '').trim().toUpperCase());
+      if (isGaushalaScopedModule && user.gaushalaId) {
+        const enforcedGaushalaId = resolveUserGaushalaId(req);
+        if (enforcedGaushalaId) {
+          if (req.query && !req.query.gaushalaId && !req.query.gaushala_id) {
+            req.query.gaushalaId = enforcedGaushalaId;
+          }
+        }
+      }
+
+      // 2. ADMIN BYPASS: Full access to all modules/actions within their assigned gaushala
+      if (isAdmin(user)) {
+        return next();
+      }
+
+      // 3. REGULAR USER: Check user-specific permissions
       const userPerm = await UserPermission.findOne({ userId: user._id });
       if (!userPerm || !Array.isArray(userPerm.permissions) || userPerm.permissions.length === 0) {
         throw new AppError('Access denied: No permissions assigned to your user account', 403);

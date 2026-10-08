@@ -4,6 +4,7 @@ const env = require('../config/env');
 const User = require('../models/User');
 const AppError = require('../utils/AppError');
 const asyncHandler = require('../utils/asyncHandler');
+const { isAdminOrSuperAdmin } = require('../utils/roles');
 
 const adminOnly = asyncHandler(async (req, res, next) => {
   if (!env.jwtSecret || Buffer.byteLength(env.jwtSecret) < 32) {
@@ -35,7 +36,7 @@ const adminOnly = asyncHandler(async (req, res, next) => {
   if (!user) {
     throw new AppError('User is not active', 401);
   }
-  if (user.roleId?.roleName?.trim().toLowerCase() !== 'admin') {
+  if (!isAdminOrSuperAdmin(user)) {
     throw new AppError('Admin access is required', 403);
   }
 

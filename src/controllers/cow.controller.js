@@ -4,6 +4,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
 const Gaushala = require('../models/Gaushala');
 const Cow = require('../models/cow.model');
+const { isSuperAdmin, isAdmin } = require('../utils/roles');
 
 /**
  * Controller to handle POST /api/v1/cows
@@ -13,7 +14,7 @@ const addCow = asyncHandler(async (req, res) => {
   console.log(JSON.stringify(req.body, null, 2));
 
   const cowData = req.validatedData || req.body;
-  const createdCow = await cowService.addCow(cowData);
+  const createdCow = await cowService.addCow(cowData, req.user);
 
   res.status(201).json({
     success: true,
@@ -26,7 +27,17 @@ const addCow = asyncHandler(async (req, res) => {
  * Controller to handle GET /api/v1/cows
  */
 const getCows = asyncHandler(async (req, res) => {
-  const gaushalaId = req.query.gaushalaId || req.query.gaushala_id || req.params?.gaushalaId;
+  let gaushalaId = req.query.gaushalaId || req.query.gaushala_id || req.params?.gaushalaId;
+
+  const user = req.user;
+  if (user && !isSuperAdmin(user) && user.gaushalaId) {
+    const userGaushalaStr = (user.gaushalaId._id || user.gaushalaId).toString();
+    if (gaushalaId && gaushalaId.trim() !== userGaushalaStr) {
+      const roleLabel = isAdmin(user) ? 'Admin' : 'User';
+      throw new AppError(`Access denied: ${roleLabel} can only access their assigned gaushala`, 403);
+    }
+    gaushalaId = userGaushalaStr;
+  }
 
   if (!gaushalaId || typeof gaushalaId !== 'string' || !gaushalaId.trim()) {
     throw new AppError('Gaushala Id is required', 400);
@@ -70,12 +81,25 @@ const importCows = asyncHandler(async (req, res) => {
     throw new AppError('addedBy or authentication is required', 400);
   }
 
-  const defaultGaushalaId = req.body?.gaushalaId || req.body?.gaushala_id || null;
+  let defaultGaushalaId = req.body?.gaushalaId || req.body?.gaushala_id || null;
+
+  // Role-based Gaushala check:
+  // - SUPERADMIN: Can import cows to ANY gaushala.
+  // - ADMIN & USER: Can ONLY import cows to their assigned gaushala.
+  if (req.user && !isSuperAdmin(req.user) && req.user.gaushalaId) {
+    const userGaushalaStr = (req.user.gaushalaId._id || req.user.gaushalaId).toString();
+    if (defaultGaushalaId && defaultGaushalaId.toString().trim() !== userGaushalaStr) {
+      const roleLabel = isAdmin(req.user) ? 'Admin' : 'User';
+      throw new AppError(`Access denied: ${roleLabel} can only import cows to their assigned gaushala`, 403);
+    }
+    defaultGaushalaId = userGaushalaStr;
+  }
 
   const result = await cowService.importCowsFromExcel({
     fileBuffer: req.file.buffer,
     addedBy,
     defaultGaushalaId,
+    user: req.user,
   });
 
   const message = `Import completed: ${result.importedCount} cows imported successfully${result.failedCount > 0 ? `, ${result.failedCount} rows failed` : ''}`;
@@ -92,8 +116,11 @@ const importCows = asyncHandler(async (req, res) => {
  * Generates dynamic Excel template with database dropdowns.
  */
 const downloadImportTemplate = asyncHandler(async (req, res) => {
-  const gaushalaId = req.query.gaushalaId || req.query.gaushala_id || null;
-  const buffer = await cowService.generateCowImportTemplate({ gaushalaId });
+  let gaushalaId = req.query.gaushalaId || req.query.gaushala_id || null;
+  if (req.user && !isSuperAdmin(req.user) && req.user.gaushalaId) {
+    gaushalaId = (req.user.gaushalaId._id || req.user.gaushalaId).toString();
+  }
+  const buffer = await cowService.generateCowImportTemplate({ gaushalaId, user: req.user });
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', 'attachment; filename="cow_import_template.xlsx"');
@@ -107,7 +134,7 @@ const updateCow = asyncHandler(async (req, res) => {
   const cowId = req.cowId || req.params.id;
   const updateData = req.validatedData || req.body;
 
-  const updatedCow = await cowService.updateCow(cowId, updateData);
+  const updatedCow = await cowService.updateCow(cowId, updateData, req.user);
 
   res.status(200).json({
     success: true,
@@ -123,7 +150,7 @@ const deleteCow = asyncHandler(async (req, res) => {
   const cowId = req.params.id;
   const userId = req.user?._id;
 
-  const result = await cowService.deleteCow(cowId, userId);
+  const result = await cowService.deleteCow(cowId, userId, req.user);
 
   res.status(200).json({
     success: true,
@@ -139,7 +166,7 @@ const markCowAsDied = asyncHandler(async (req, res) => {
   const cowId = req.params.id;
   const sendDiedDate = req.body.send_died_date;
 
-  const result = await cowService.markCowAsDied(cowId, sendDiedDate);
+  const result = await cowService.markCowAsDied(cowId, sendDiedDate, req.user);
 
   res.status(200).json({
     success: true,
@@ -155,7 +182,7 @@ const toggleCowStatus = asyncHandler(async (req, res) => {
   const cowId = req.params.id;
   const isActive = req.body?.isActive;
 
-  const result = await cowService.toggleCowStatus(cowId, isActive);
+  const result = await cowService.toggleCowStatus(cowId, isActive, req.user);
 
   const statusText = result.isActive ? 'activated' : 'deactivated';
 
@@ -176,6 +203,7 @@ const transferShed = asyncHandler(async (req, res) => {
   const result = await cowService.transferShed({
     ...transferData,
     transferredBy,
+    user: req.user,
   });
 
   res.status(200).json({
@@ -195,7 +223,19 @@ const transferShed = asyncHandler(async (req, res) => {
  */
 const getShedTransferHistory = asyncHandler(async (req, res) => {
   const cowId = req.query.cowId || req.query.cow_id || req.query.cowID;
-  const gaushalaId = req.query.gaushalaId || req.query.gaushala_id || req.query.gaushalaID || req.params?.gaushalaId;
+  let gaushalaId = req.query.gaushalaId || req.query.gaushala_id || req.query.gaushalaID || req.params?.gaushalaId;
+
+  const user = req.user;
+  if (user && !isSuperAdmin(user) && user.gaushalaId) {
+    const userGaushalaStr = (user.gaushalaId._id || user.gaushalaId).toString();
+    if (gaushalaId && gaushalaId.trim() !== userGaushalaStr) {
+      const roleLabel = isAdmin(user) ? 'Admin' : 'User';
+      throw new AppError(`Access denied: ${roleLabel} can only view shed transfers within their assigned gaushala`, 403);
+    }
+    if (!cowId && !gaushalaId) {
+      gaushalaId = userGaushalaStr;
+    }
+  }
 
   const trimmedCowId = typeof cowId === 'string' && cowId.trim() ? cowId.trim() : null;
   const trimmedGaushalaId = typeof gaushalaId === 'string' && gaushalaId.trim() ? gaushalaId.trim() : null;
@@ -212,6 +252,14 @@ const getShedTransferHistory = asyncHandler(async (req, res) => {
     cow = await Cow.findById(trimmedCowId).populate('gaushala_id', 'gaushalaName');
     if (!cow) {
       throw new AppError(`Cow not found with ID: ${trimmedCowId}`, 404);
+    }
+    if (user && !isSuperAdmin(user) && user.gaushalaId) {
+      const userGaushalaStr = (user.gaushalaId._id || user.gaushalaId).toString();
+      const cowGaushalaStr = (cow.gaushala_id?._id || cow.gaushala_id)?.toString();
+      if (cowGaushalaStr && cowGaushalaStr !== userGaushalaStr) {
+        const roleLabel = isAdmin(user) ? 'Admin' : 'User';
+        throw new AppError(`Access denied: ${roleLabel} can only view shed transfers within their assigned gaushala`, 403);
+      }
     }
   }
 

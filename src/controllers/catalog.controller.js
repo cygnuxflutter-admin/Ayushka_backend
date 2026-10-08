@@ -4,6 +4,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const User = require('../models/User');
 const Gaushala = require('../models/Gaushala');
 const Cow = require('../models/cow.model');
+const { isSuperAdmin, isAdmin } = require('../utils/roles');
 
 const createCatalogController = (Model, field, userReference, label, options = {}) => {
   const fields = Array.isArray(field) ? field : [field];
@@ -59,7 +60,17 @@ const createCatalogController = (Model, field, userReference, label, options = {
   return {
     list: asyncHandler(async (req, res) => {
       const query = {};
-      const gaushala = getFilterGaushalaId(req);
+      let gaushala = getFilterGaushalaId(req);
+
+      const user = req.user;
+      if (user && !isSuperAdmin(user) && user.gaushalaId && (Model.schema.paths.gaushalaId || Model.schema.paths.gaushala_id)) {
+        const userGaushalaStr = (user.gaushalaId._id || user.gaushalaId).toString();
+        if (gaushala && gaushala !== userGaushalaStr) {
+          const roleLabel = isAdmin(user) ? 'Admin' : 'User';
+          throw new AppError(`Access denied: ${roleLabel} can only access their assigned gaushala`, 403);
+        }
+        gaushala = userGaushalaStr;
+      }
 
       if (options?.requireGaushala && !gaushala) {
         throw new AppError('Gaushala Id is required', 400);
@@ -96,6 +107,18 @@ const createCatalogController = (Model, field, userReference, label, options = {
 
     create: asyncHandler(async (req, res) => {
       const values = readValues(req.body, req);
+
+      const user = req.user;
+      if (user && !isSuperAdmin(user) && user.gaushalaId && (Model.schema.paths.gaushalaId || Model.schema.paths.gaushala_id)) {
+        const userGaushalaStr = (user.gaushalaId._id || user.gaushalaId).toString();
+        const providedGaushala = values.gaushalaId || values.gaushala_id;
+        if (providedGaushala && providedGaushala !== userGaushalaStr) {
+          const roleLabel = isAdmin(user) ? 'Admin' : 'User';
+          throw new AppError(`Access denied: ${roleLabel} can only create ${label} in their assigned gaushala`, 403);
+        }
+        if (Model.schema.paths.gaushalaId) values.gaushalaId = userGaushalaStr;
+        if (Model.schema.paths.gaushala_id) values.gaushala_id = userGaushalaStr;
+      }
       
       if (Model.schema.paths.gaushalaId) {
         const gaushala = values.gaushalaId || values.gaushala_id || resolveGaushalaId(req, req.body);
@@ -158,11 +181,43 @@ const createCatalogController = (Model, field, userReference, label, options = {
       if (!record) {
         throw new AppError(`${label} not found`, 404);
       }
+
+      const user = req.user;
+      if (user && !isSuperAdmin(user) && user.gaushalaId && (Model.schema.paths.gaushalaId || Model.schema.paths.gaushala_id)) {
+        const userGaushalaStr = (user.gaushalaId._id || user.gaushalaId).toString();
+        const recordGaushala = (record.gaushalaId?._id || record.gaushalaId || record.gaushala_id?._id || record.gaushala_id)?.toString();
+        if (recordGaushala && recordGaushala !== userGaushalaStr) {
+          const roleLabel = isAdmin(user) ? 'Admin' : 'User';
+          throw new AppError(`Access denied: ${roleLabel} can only view ${label} within their assigned gaushala`, 403);
+        }
+      }
+
       res.status(200).json({ success: true, data: record });
     }),
 
     update: asyncHandler(async (req, res) => {
       const values = readValues(req.body, req);
+
+      const user = req.user;
+      if (user && !isSuperAdmin(user) && user.gaushalaId && (Model.schema.paths.gaushalaId || Model.schema.paths.gaushala_id)) {
+        const userGaushalaStr = (user.gaushalaId._id || user.gaushalaId).toString();
+        const existingRecord = await Model.findById(req.params.id);
+        if (!existingRecord) {
+          throw new AppError(`${label} not found`, 404);
+        }
+        const recordGaushala = (existingRecord.gaushalaId?._id || existingRecord.gaushalaId || existingRecord.gaushala_id?._id || existingRecord.gaushala_id)?.toString();
+        if (recordGaushala && recordGaushala !== userGaushalaStr) {
+          const roleLabel = isAdmin(user) ? 'Admin' : 'User';
+          throw new AppError(`Access denied: ${roleLabel} can only update ${label} within their assigned gaushala`, 403);
+        }
+        const providedGaushala = values.gaushalaId || values.gaushala_id;
+        if (providedGaushala && providedGaushala !== userGaushalaStr) {
+          const roleLabel = isAdmin(user) ? 'Admin' : 'User';
+          throw new AppError(`Access denied: ${roleLabel} cannot change gaushala`, 403);
+        }
+        if (Model.schema.paths.gaushalaId) values.gaushalaId = userGaushalaStr;
+        if (Model.schema.paths.gaushala_id) values.gaushala_id = userGaushalaStr;
+      }
       
       if (Model.schema.paths.gaushalaId) {
         const gaushala = values.gaushalaId || values.gaushala_id || resolveGaushalaId(req, req.body);
@@ -228,6 +283,16 @@ const createCatalogController = (Model, field, userReference, label, options = {
       const record = await Model.findById(req.params.id);
       if (!record) {
         throw new AppError(`${label} not found`, 404);
+      }
+
+      const user = req.user;
+      if (user && !isSuperAdmin(user) && user.gaushalaId && (Model.schema.paths.gaushalaId || Model.schema.paths.gaushala_id)) {
+        const userGaushalaStr = (user.gaushalaId._id || user.gaushalaId).toString();
+        const recordGaushala = (record.gaushalaId?._id || record.gaushalaId || record.gaushala_id?._id || record.gaushala_id)?.toString();
+        if (recordGaushala && recordGaushala !== userGaushalaStr) {
+          const roleLabel = isAdmin(user) ? 'Admin' : 'User';
+          throw new AppError(`Access denied: ${roleLabel} can only delete ${label} within their assigned gaushala`, 403);
+        }
       }
 
       const referencedUser = userReference

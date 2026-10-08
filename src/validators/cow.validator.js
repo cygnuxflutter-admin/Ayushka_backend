@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const AppError = require('../utils/AppError');
+const { isSuperAdmin, isAdmin, resolveUserGaushalaId } = require('../utils/roles');
 
 const isValidObjectId = (value) => {
   if (!value) return false;
@@ -20,13 +21,34 @@ const validateAddCow = (req, res, next) => {
   }
 
   // 1. Determine addedBy and gaushala_id (strictly from body / authenticated user)
-  const addedBy = req.user?._id?.toString() || body.addedBy;
-  const gaushala_id =
+  const user = req.user;
+  const addedBy = user?._id?.toString() || body.addedBy;
+  let gaushala_id =
     (body.gaushala_id && typeof body.gaushala_id === 'string' && body.gaushala_id.trim())
       ? body.gaushala_id.trim()
       : ((body.gaushalaId && typeof body.gaushalaId === 'string' && body.gaushalaId.trim())
         ? body.gaushalaId.trim()
         : null);
+
+  // Role-based Gaushala check:
+  // - SUPERADMIN: Can add cow to ANY gaushala.
+  // - ADMIN & USER: Can ONLY add cow to their own assigned gaushala.
+  if (user) {
+    if (isSuperAdmin(user)) {
+      if (!gaushala_id && user.gaushalaId) {
+        gaushala_id = (user.gaushalaId._id || user.gaushalaId).toString();
+      }
+    } else if (user.gaushalaId) {
+      const userGaushalaStr = (user.gaushalaId._id || user.gaushalaId).toString();
+      if (gaushala_id && gaushala_id !== userGaushalaStr) {
+        const roleLabel = isAdmin(user) ? 'Admin' : 'User';
+        return next(
+          new AppError(`Access denied: ${roleLabel} can only add cows to their assigned gaushala`, 403),
+        );
+      }
+      gaushala_id = userGaushalaStr;
+    }
+  }
 
   // 2. Validate required fields
   if (!body.breed || (typeof body.breed === 'string' && !body.breed.trim())) {
@@ -164,6 +186,15 @@ const validateUpdateCow = (req, res, next) => {
     return next(new AppError('Request body with fields to update is required', 400));
   }
 
+  const user = req.user;
+  if (user && !isSuperAdmin(user) && user.gaushalaId) {
+    const updatedGaushala = body.gaushala_id || body.gaushalaId;
+    if (updatedGaushala && updatedGaushala.toString().trim() !== (user.gaushalaId._id || user.gaushalaId).toString()) {
+      const roleLabel = isAdmin(user) ? 'Admin' : 'User';
+      return next(new AppError(`Access denied: ${roleLabel} can only update cows within their assigned gaushala`, 403));
+    }
+  }
+
   const sanitizedData = {};
 
   // 1. Validate ObjectId fields if provided
@@ -274,13 +305,31 @@ const validateShedTransfer = (req, res, next) => {
     return next(new AppError('Invalid destination shed ID format', 400));
   }
 
-  // Gaushala ID is required
-  const gaushalaId =
+  // Gaushala ID
+  let gaushalaId =
     (body.gaushalaId && typeof body.gaushalaId === 'string' && body.gaushalaId.trim())
       ? body.gaushalaId.trim()
       : ((body.gaushala_id && typeof body.gaushala_id === 'string' && body.gaushala_id.trim())
         ? body.gaushala_id.trim()
         : null);
+
+  const user = req.user;
+  if (user) {
+    if (isSuperAdmin(user)) {
+      if (!gaushalaId && user.gaushalaId) {
+        gaushalaId = (user.gaushalaId._id || user.gaushalaId).toString();
+      }
+    } else if (user.gaushalaId) {
+      const userGaushalaStr = (user.gaushalaId._id || user.gaushalaId).toString();
+      if (gaushalaId && gaushalaId !== userGaushalaStr) {
+        const roleLabel = isAdmin(user) ? 'Admin' : 'User';
+        return next(
+          new AppError(`Access denied: ${roleLabel} can only transfer cows in their assigned gaushala`, 403),
+        );
+      }
+      gaushalaId = userGaushalaStr;
+    }
+  }
 
   if (!gaushalaId) {
     return next(new AppError('gaushalaId is required', 400));

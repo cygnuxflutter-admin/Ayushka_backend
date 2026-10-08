@@ -5,17 +5,17 @@ const User = require('../models/User');
 const Module = require('../models/Module');
 const UserPermission = require('../models/UserPermission');
 const { assignDefaultPermissions } = require('../services/module.service');
+const { isAdminOrSuperAdmin } = require('../utils/roles');
 
 /**
  * Fetch permissions for the currently authenticated user.
  */
 const getMyPermissions = asyncHandler(async (req, res) => {
   const user = req.user;
-  const roleName = user.roleId?.roleName?.trim().toLowerCase();
-  const isAdmin = roleName === 'admin';
+  const isFullAccess = isAdminOrSuperAdmin(user);
 
-  if (isAdmin) {
-    // Admin has access to all modules and submodules
+  if (isFullAccess) {
+    // Admin & Superadmin have full access to all modules and submodules
     const allModules = await Module.find({ isActive: true }).sort({ name: 1 });
     const fullPermissions = [];
 
@@ -79,7 +79,7 @@ const getUserPermissions = asyncHandler(async (req, res) => {
     throw new AppError('User not found', 404);
   }
 
-  const isTargetAdmin = targetUser.roleId?.roleName?.trim().toLowerCase() === 'admin';
+  const isTargetAdmin = isAdminOrSuperAdmin(targetUser);
   const allModules = await Module.find({ isActive: true }).sort({ name: 1 });
   let userPermDoc = await UserPermission.findOne({ userId: targetUser._id });
   if (!userPermDoc || !Array.isArray(userPermDoc.permissions) || userPermDoc.permissions.length === 0) {

@@ -32,6 +32,16 @@ const createModule = asyncHandler(async (req, res) => {
   });
 });
 
+const bulkCreateModules = asyncHandler(async (req, res) => {
+  const modulesList = Array.isArray(req.body) ? req.body : req.body.modules;
+  const created = await moduleService.bulkCreateModules(modulesList);
+  res.status(201).json({
+    success: true,
+    message: `${created.length} modules processed successfully`,
+    data: created,
+  });
+});
+
 const updateModule = asyncHandler(async (req, res) => {
   const updated = await moduleService.updateModule(req.params.id, req.body);
   res.status(200).json({
@@ -72,6 +82,7 @@ module.exports = {
   getModules,
   getModuleById,
   createModule,
+  bulkCreateModules,
   updateModule,
   deleteModule,
   addSubModule,

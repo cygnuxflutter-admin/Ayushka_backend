@@ -6,7 +6,7 @@ const asyncHandler = require('../utils/asyncHandler');
  */
 const addUser = asyncHandler(async (req, res) => {
   const userData = req.validatedData || req.body;
-  const createdUser = await userService.addUser(userData);
+  const createdUser = await userService.addUser(userData, req.user);
 
   res.status(201).json({
     success: true,
@@ -22,7 +22,7 @@ const updateUser = asyncHandler(async (req, res) => {
   const userId = req.userId || req.params.id;
   const updateData = req.validatedData || req.body;
 
-  const updatedUser = await userService.updateUser(userId, updateData);
+  const updatedUser = await userService.updateUser(userId, updateData, req.user);
 
   res.status(200).json({
     success: true,
@@ -42,7 +42,7 @@ const getUsers = asyncHandler(async (req, res) => {
     search: req.query.search,
   };
 
-  const users = await userService.getUsers(filterOptions);
+  const users = await userService.getUsers(filterOptions, req.user);
 
   res.status(200).json({
     success: true,
@@ -56,7 +56,7 @@ const getUsers = asyncHandler(async (req, res) => {
  */
 const getUserById = asyncHandler(async (req, res) => {
   const userId = req.params.id;
-  const user = await userService.getUserById(userId);
+  const user = await userService.getUserById(userId, req.user);
 
   res.status(200).json({
     success: true,
@@ -72,7 +72,7 @@ const toggleUserStatus = asyncHandler(async (req, res) => {
   const userId = req.params.id;
   const isActive = req.body?.isActive !== undefined ? req.body.isActive : req.body?.is_active;
 
-  const result = await userService.toggleUserStatus(userId, isActive);
+  const result = await userService.toggleUserStatus(userId, isActive, req.user);
   const statusText = result.isActive ? 'activated' : 'deactivated';
 
   res.status(200).json({
@@ -89,7 +89,7 @@ const deleteUser = asyncHandler(async (req, res) => {
   const userId = req.params.id;
   const deletedBy = req.user?._id;
 
-  const result = await userService.deleteUser(userId, deletedBy);
+  const result = await userService.deleteUser(userId, deletedBy, req.user);
 
   res.status(200).json({
     success: true,

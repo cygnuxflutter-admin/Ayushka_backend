@@ -4,13 +4,23 @@ const Gaushala = require('../models/Gaushala');
 const Role = require('../models/Role');
 const AppError = require('../utils/AppError');
 const { assignDefaultPermissions } = require('./module.service');
+const { isAdminOrSuperAdmin, isSuperAdmin, isAdmin } = require('../utils/roles');
 
 /**
  * Add a new user to the database.
  * @param {Object} userData
+ * @param {Object} [requester] Authenticated user document (req.user)
  * @returns {Promise<Object>} Created user document
  */
-const addUser = async (userData) => {
+const addUser = async (userData, requester = null) => {
+  if (requester && !isSuperAdmin(requester) && requester.gaushalaId) {
+    const userGaushalaStr = (requester.gaushalaId._id || requester.gaushalaId).toString();
+    if (userData.gaushalaId && userData.gaushalaId.toString() !== userGaushalaStr) {
+      const roleLabel = isAdmin(requester) ? 'Admin' : 'User';
+      throw new AppError(`Access denied: ${roleLabel} can only add users to their assigned gaushala`, 403);
+    }
+  }
+
   // 1. Verify that referenced Gaushala exists
   const gaushala = await Gaushala.findById(userData.gaushalaId);
   if (!gaushala) {
@@ -59,9 +69,10 @@ const addUser = async (userData) => {
  * Update an existing user.
  * @param {string} userId
  * @param {Object} updateData
+ * @param {Object} [requester] Authenticated user document (req.user)
  * @returns {Promise<Object>} Updated user document
  */
-const updateUser = async (userId, updateData) => {
+const updateUser = async (userId, updateData, requester = null) => {
   if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
     throw new AppError('Invalid User ID format', 400);
   }
@@ -73,6 +84,15 @@ const updateUser = async (userId, updateData) => {
   });
   if (!existingUser) {
     throw new AppError('User not found', 404);
+  }
+
+  if (requester && !isSuperAdmin(requester) && requester.gaushalaId) {
+    const userGaushalaStr = (requester.gaushalaId._id || requester.gaushalaId).toString();
+    const targetGaushalaStr = (existingUser.gaushalaId?._id || existingUser.gaushalaId)?.toString();
+    if (targetGaushalaStr && targetGaushalaStr !== userGaushalaStr) {
+      const roleLabel = isAdmin(requester) ? 'Admin' : 'User';
+      throw new AppError(`Access denied: ${roleLabel} can only update users within their assigned gaushala`, 403);
+    }
   }
 
   // 2. If gaushalaId is being updated, verify it exists
@@ -131,12 +151,15 @@ const updateUser = async (userId, updateData) => {
 /**
  * Get users with optional filtering.
  * @param {Object} filterOptions
+ * @param {Object} [requester] Authenticated user document (req.user)
  * @returns {Promise<Array>}
  */
-const getUsers = async (filterOptions = {}) => {
+const getUsers = async (filterOptions = {}, requester = null) => {
   const query = { isDeleted: false };
 
-  if (filterOptions.gaushalaId && mongoose.Types.ObjectId.isValid(filterOptions.gaushalaId)) {
+  if (requester && !isSuperAdmin(requester) && requester.gaushalaId) {
+    query.gaushalaId = requester.gaushalaId._id || requester.gaushalaId;
+  } else if (filterOptions.gaushalaId && mongoose.Types.ObjectId.isValid(filterOptions.gaushalaId)) {
     query.gaushalaId = filterOptions.gaushalaId;
   }
   if (filterOptions.roleId && mongoose.Types.ObjectId.isValid(filterOptions.roleId)) {
@@ -163,9 +186,10 @@ const getUsers = async (filterOptions = {}) => {
 /**
  * Get user by ID.
  * @param {string} userId
+ * @param {Object} [requester] Authenticated user document (req.user)
  * @returns {Promise<Object>}
  */
-const getUserById = async (userId) => {
+const getUserById = async (userId, requester = null) => {
   if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
     throw new AppError('Invalid User ID format', 400);
   }
@@ -181,6 +205,15 @@ const getUserById = async (userId) => {
     throw new AppError('User not found', 404);
   }
 
+  if (requester && !isSuperAdmin(requester) && requester.gaushalaId) {
+    const userGaushalaStr = (requester.gaushalaId._id || requester.gaushalaId).toString();
+    const targetGaushalaStr = (user.gaushalaId?._id || user.gaushalaId)?.toString();
+    if (targetGaushalaStr && targetGaushalaStr !== userGaushalaStr) {
+      const roleLabel = isAdmin(requester) ? 'Admin' : 'User';
+      throw new AppError(`Access denied: ${roleLabel} can only view users within their assigned gaushala`, 403);
+    }
+  }
+
   return user;
 };
 
@@ -188,9 +221,10 @@ const getUserById = async (userId) => {
  * Toggle user active status.
  * @param {string} userId
  * @param {boolean} [explicitActiveStatus]
+ * @param {Object} [requester] Authenticated user document (req.user)
  * @returns {Promise<Object>}
  */
-const toggleUserStatus = async (userId, explicitActiveStatus) => {
+const toggleUserStatus = async (userId, explicitActiveStatus, requester = null) => {
   if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
     throw new AppError('Invalid User ID format', 400);
   }
@@ -202,6 +236,15 @@ const toggleUserStatus = async (userId, explicitActiveStatus) => {
 
   if (!user) {
     throw new AppError('User not found', 404);
+  }
+
+  if (requester && !isSuperAdmin(requester) && requester.gaushalaId) {
+    const userGaushalaStr = (requester.gaushalaId._id || requester.gaushalaId).toString();
+    const targetGaushalaStr = (user.gaushalaId?._id || user.gaushalaId)?.toString();
+    if (targetGaushalaStr && targetGaushalaStr !== userGaushalaStr) {
+      const roleLabel = isAdmin(requester) ? 'Admin' : 'User';
+      throw new AppError(`Access denied: ${roleLabel} can only modify users within their assigned gaushala`, 403);
+    }
   }
 
   if (typeof explicitActiveStatus === 'boolean') {
@@ -222,9 +265,10 @@ const toggleUserStatus = async (userId, explicitActiveStatus) => {
  * Soft-delete a user.
  * @param {string} userId
  * @param {string} deletedBy
+ * @param {Object} [requester] Authenticated user document (req.user)
  * @returns {Promise<Object>}
  */
-const deleteUser = async (userId, deletedBy) => {
+const deleteUser = async (userId, deletedBy, requester = null) => {
   if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
     throw new AppError('Invalid User ID format', 400);
   }
@@ -236,6 +280,15 @@ const deleteUser = async (userId, deletedBy) => {
 
   if (!user) {
     throw new AppError('User not found', 404);
+  }
+
+  if (requester && !isSuperAdmin(requester) && requester.gaushalaId) {
+    const userGaushalaStr = (requester.gaushalaId._id || requester.gaushalaId).toString();
+    const targetGaushalaStr = (user.gaushalaId?._id || user.gaushalaId)?.toString();
+    if (targetGaushalaStr && targetGaushalaStr !== userGaushalaStr) {
+      const roleLabel = isAdmin(requester) ? 'Admin' : 'User';
+      throw new AppError(`Access denied: ${roleLabel} can only delete users within their assigned gaushala`, 403);
+    }
   }
 
   user.isDeleted = true;
@@ -289,7 +342,7 @@ const forgotPassword = async ({
     throw new AppError('Password must be at least 8 characters long', 400);
   }
 
-  const isAdmin = requester?.roleId?.roleName?.trim().toLowerCase() === 'admin';
+  const isAdmin = isAdminOrSuperAdmin(requester);
 
   let user = null;
 

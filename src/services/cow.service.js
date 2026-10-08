@@ -7,15 +7,26 @@ const Shed = require('../models/Shed');
 const User = require('../models/User');
 const ShedTransferHistory = require('../models/ShedTransferHistory');
 const AppError = require('../utils/AppError');
+const { isSuperAdmin, isAdmin } = require('../utils/roles');
 
 /**
  * Service to add a new cow.
  * Performs reference checks, uniqueness verification, creation, and population.
  *
  * @param {Object} cowData Validated cow data
+ * @param {Object} [user] Authenticated user document (req.user)
  * @returns {Promise<Object>} Populated cow document
  */
-const addCow = async (cowData) => {
+const addCow = async (cowData, user = null) => {
+  // Check Gaushala access for non-superadmin
+  if (user && !isSuperAdmin(user) && user.gaushalaId) {
+    const userGaushalaStr = (user.gaushalaId._id || user.gaushalaId).toString();
+    if (cowData.gaushala_id && cowData.gaushala_id.toString() !== userGaushalaStr) {
+      const roleLabel = isAdmin(user) ? 'Admin' : 'User';
+      throw new AppError(`Access denied: ${roleLabel} can only add cows to their assigned gaushala`, 403);
+    }
+  }
+
   // 1. Verify referenced documents exist in MongoDB
   const [breedExists, gaushalaExists, typeExists, userExists] = await Promise.all([
     BreedType.findById(cowData.breed),
@@ -55,14 +66,14 @@ const addCow = async (cowData) => {
   }
 
   if (cowData.dam_id) {
-    const damExists = await Cow.findOne({ _id: cowData.dam_id, isDeleted: false });
+    const damExists = await Cow.findOne({ _id: cowData.dam_id, isDelete: { $ne: true } });
     if (!damExists) {
       throw new AppError('Dam cow not found', 404);
     }
   }
 
   if (cowData.sair_id) {
-    const sireExists = await Cow.findOne({ _id: cowData.sair_id, isDeleted: false });
+    const sireExists = await Cow.findOne({ _id: cowData.sair_id, isDelete: { $ne: true } });
     if (!sireExists) {
       throw new AppError('Sire cow not found', 404);
     }
@@ -71,7 +82,7 @@ const addCow = async (cowData) => {
   // 2. Check duplicate tag_id for active cows
   const existingCow = await Cow.findOne({
     tag_id: cowData.tag_id,
-    isDeleted: false,
+    isDelete: { $ne: true },
   });
   if (existingCow) {
     throw new AppError('Cow with this tag ID already exists', 409);
@@ -89,7 +100,7 @@ const addCow = async (cowData) => {
       dob: cowData.dob || '',
       calf_name: cowData.calf_name || '',
       isFemale: cowData.isFemale,
-      isDeleted: false,
+      isDelete: false,
       addedBy: cowData.addedBy,
       calf_weight: cowData.calf_weight ?? 0,
       avatarUrl: cowData.avatarUrl || '',
@@ -281,10 +292,10 @@ const parseBooleanField = (val) => {
 /**
  * Service to import multiple cows from an Excel or CSV buffer.
  *
- * @param {Object} options Options containing fileBuffer, addedBy, and defaultGaushalaId
+ * @param {Object} options Options containing fileBuffer, addedBy, defaultGaushalaId, and user
  * @returns {Promise<{ totalRows: number, importedCount: number, failedCount: number, imported: Array, errors: Array }>}
  */
-const importCowsFromExcel = async ({ fileBuffer, addedBy, defaultGaushalaId = null }) => {
+const importCowsFromExcel = async ({ fileBuffer, addedBy, defaultGaushalaId = null, user = null }) => {
   if (!fileBuffer || !Buffer.isBuffer(fileBuffer)) {
     throw new AppError('A valid Excel file buffer is required', 400);
   }
@@ -395,6 +406,22 @@ const importCowsFromExcel = async ({ fileBuffer, addedBy, defaultGaushalaId = nu
       continue;
     }
 
+    // Role-based Gaushala check:
+    // - SUPERADMIN: Can import cows to ANY gaushala.
+    // - ADMIN & USER: Can ONLY import cows to their assigned gaushala.
+    if (user && !isSuperAdmin(user) && user.gaushalaId) {
+      const userGaushalaStr = (user.gaushalaId._id || user.gaushalaId).toString();
+      if (matchedGaushala._id.toString() !== userGaushalaStr) {
+        const roleLabel = isAdmin(user) ? 'Admin' : 'User';
+        errors.push({
+          row: rowNumber,
+          tag_id,
+          error: `Access denied: ${roleLabel} can only import cows to their assigned gaushala`,
+        });
+        continue;
+      }
+    }
+
     // 4. Breed (Required)
     const rawBreed = String(row.breed || row.breedName || row.breed_id || row['Breed'] || row['breed'] || '').trim();
     if (!rawBreed) {
@@ -496,7 +523,6 @@ const importCowsFromExcel = async ({ fileBuffer, addedBy, defaultGaushalaId = nu
       remark,
       isActive: true,
       isDelete: false,
-      isDeleted: false,
       isDied: false,
       rowNumber,
     });
@@ -558,12 +584,19 @@ const ExcelJS = require('exceljs');
  * Service to dynamically generate an Excel template pre-loaded with
  * Dropdown data validation for breeds, cow types, gaushalas, and sheds.
  *
- * @param {Object} options Optional gaushalaId filter
+ * @param {Object} options Optional gaushalaId filter and user
  * @returns {Promise<Buffer>} Excel file buffer
  */
-const generateCowImportTemplate = async ({ gaushalaId = null } = {}) => {
+const generateCowImportTemplate = async ({ gaushalaId = null, user = null } = {}) => {
+  let gaushalaFilter = {};
+  if (user && !isSuperAdmin(user) && user.gaushalaId) {
+    gaushalaFilter = { _id: user.gaushalaId._id || user.gaushalaId };
+  } else if (gaushalaId) {
+    gaushalaFilter = { _id: gaushalaId };
+  }
+
   const [allGaushalas, allBreeds, allTypes, allSheds] = await Promise.all([
-    Gaushala.find().sort({ gaushalaName: 1 }),
+    Gaushala.find(gaushalaFilter).sort({ gaushalaName: 1 }),
     BreedType.find().sort({ breedName: 1 }),
     Type.find().sort({ typeName: 1 }),
     Shed.find().populate('gaushalaId', 'gaushalaName').sort({ shedNumber: 1 }),
@@ -779,13 +812,26 @@ const generateCowImportTemplate = async ({ gaushalaId = null } = {}) => {
  *
  * @param {string} cowId ID of the cow to update
  * @param {Object} updateData Validated update payload
+ * @param {Object} [user] Authenticated user document (req.user)
  * @returns {Promise<Object>} Populated updated cow document
  */
-const updateCow = async (cowId, updateData) => {
+const updateCow = async (cowId, updateData, user = null) => {
+
+
   // 1. Check if cow exists
-  const existingCow = await Cow.findOne({ _id: cowId, isDeleted: false });
+  const existingCow = await Cow.findOne({ _id: cowId, isDelete: { $ne: true } });
   if (!existingCow) {
     throw new AppError('Cow not found', 404);
+  }
+
+  // Check Gaushala access for non-superadmin
+  if (user && !isSuperAdmin(user) && user.gaushalaId) {
+    const userGaushalaStr = user.gaushalaId.toString();
+    const cowGaushalaStr = existingCow.gaushala_id?.toString();
+    if (cowGaushalaStr && cowGaushalaStr !== userGaushalaStr) {
+      const roleLabel = isAdmin(user) ? 'Admin' : 'User';
+      throw new AppError(`Access denied: ${roleLabel} can only update cows within their assigned gaushala`, 403);
+    }
   }
 
   // 2. Validate references if changing
@@ -843,7 +889,7 @@ const updateCow = async (cowId, updateData) => {
     if (updateData.dam_id.toString() === cowId.toString()) {
       throw new AppError('A cow cannot be its own dam', 400);
     }
-    const damExists = await Cow.findOne({ _id: updateData.dam_id, isDeleted: false });
+    const damExists = await Cow.findOne({ _id: updateData.dam_id, isDelete: { $ne: true } });
     if (!damExists) {
       throw new AppError('Dam cow not found', 404);
     }
@@ -853,7 +899,7 @@ const updateCow = async (cowId, updateData) => {
     if (updateData.sair_id.toString() === cowId.toString()) {
       throw new AppError('A cow cannot be its own sire', 400);
     }
-    const sireExists = await Cow.findOne({ _id: updateData.sair_id, isDeleted: false });
+    const sireExists = await Cow.findOne({ _id: updateData.sair_id, isDelete: { $ne: true } });
     if (!sireExists) {
       throw new AppError('Sire cow not found', 404);
     }
@@ -864,7 +910,7 @@ const updateCow = async (cowId, updateData) => {
     const duplicateTag = await Cow.findOne({
       tag_id: updateData.tag_id,
       _id: { $ne: cowId },
-      isDeleted: false,
+      isDelete: { $ne: true },
     });
     if (duplicateTag) {
       throw new AppError('Cow with this tag ID already exists', 409);
@@ -893,9 +939,10 @@ const updateCow = async (cowId, updateData) => {
  *
  * @param {string} cowId ID of the cow to soft-delete
  * @param {string|ObjectId} userId ID of the authenticated user performing the deletion
+ * @param {Object} [user] Authenticated user document (req.user)
  * @returns {Promise<{ id: string }>} Result containing the deleted cow id
  */
-const deleteCow = async (cowId, userId) => {
+const deleteCow = async (cowId, userId, user = null) => {
   if (!cowId || !mongoose.isValidObjectId(cowId)) {
     throw new AppError('Invalid Cow ID format', 400);
   }
@@ -903,6 +950,15 @@ const deleteCow = async (cowId, userId) => {
   const cow = await Cow.findById(cowId);
   if (!cow) {
     throw new AppError('Cow not found', 404);
+  }
+
+  if (user && !isSuperAdmin(user) && user.gaushalaId) {
+    const userGaushalaStr = user.gaushalaId.toString();
+    const cowGaushalaStr = cow.gaushala_id?.toString();
+    if (cowGaushalaStr && cowGaushalaStr !== userGaushalaStr) {
+      const roleLabel = isAdmin(user) ? 'Admin' : 'User';
+      throw new AppError(`Access denied: ${roleLabel} can only delete cows within their assigned gaushala`, 403);
+    }
   }
 
   if (cow.isDelete === true || cow.isDeleted === true) {
@@ -930,9 +986,10 @@ const deleteCow = async (cowId, userId) => {
  *
  * @param {string} cowId ID of the cow to mark as died
  * @param {string} sendDiedDate Date string when the cow died
+ * @param {Object} [user] Authenticated user document (req.user)
  * @returns {Promise<{ id: string, send_died_date: string }>} Result
  */
-const markCowAsDied = async (cowId, sendDiedDate) => {
+const markCowAsDied = async (cowId, sendDiedDate, user = null) => {
   if (!cowId || !mongoose.isValidObjectId(cowId)) {
     throw new AppError('Invalid Cow ID format', 400);
   }
@@ -949,6 +1006,15 @@ const markCowAsDied = async (cowId, sendDiedDate) => {
   const cow = await Cow.findById(cowId);
   if (!cow) {
     throw new AppError('Cow not found', 404);
+  }
+
+  if (user && !isSuperAdmin(user) && user.gaushalaId) {
+    const userGaushalaStr = user.gaushalaId.toString();
+    const cowGaushalaStr = cow.gaushala_id?.toString();
+    if (cowGaushalaStr && cowGaushalaStr !== userGaushalaStr) {
+      const roleLabel = isAdmin(user) ? 'Admin' : 'User';
+      throw new AppError(`Access denied: ${roleLabel} can only modify cows within their assigned gaushala`, 403);
+    }
   }
 
   if (cow.isDelete === true || cow.isDeleted === true) {
@@ -984,9 +1050,10 @@ const markCowAsDied = async (cowId, sendDiedDate) => {
  *
  * @param {string} cowId ID of the cow
  * @param {boolean|string|undefined} explicitStatus Optional explicit isActive status
+ * @param {Object} [user] Authenticated user document (req.user)
  * @returns {Promise<{ id: string, isActive: boolean }>} Result
  */
-const toggleCowStatus = async (cowId, explicitStatus) => {
+const toggleCowStatus = async (cowId, explicitStatus, user = null) => {
   if (!cowId || !mongoose.isValidObjectId(cowId)) {
     throw new AppError('Invalid Cow ID format', 400);
   }
@@ -994,6 +1061,15 @@ const toggleCowStatus = async (cowId, explicitStatus) => {
   const cow = await Cow.findById(cowId);
   if (!cow) {
     throw new AppError('Cow not found', 404);
+  }
+
+  if (user && !isSuperAdmin(user) && user.gaushalaId) {
+    const userGaushalaStr = (user.gaushalaId._id || user.gaushalaId).toString();
+    const cowGaushalaStr = (cow.gaushala_id?._id || cow.gaushala_id)?.toString();
+    if (cowGaushalaStr && cowGaushalaStr !== userGaushalaStr) {
+      const roleLabel = isAdmin(user) ? 'Admin' : 'User';
+      throw new AppError(`Access denied: ${roleLabel} can only modify cows within their assigned gaushala`, 403);
+    }
   }
 
   if (cow.isDelete === true || cow.isDeleted === true) {
@@ -1045,6 +1121,7 @@ const toggleCowStatus = async (cowId, explicitStatus) => {
  * @param {string} transferData.transferredBy
  * @param {Date|string} [transferData.transferDate]
  * @param {string} [transferData.reason]
+ * @param {Object} [transferData.user]
  * @returns {Promise<Object>} Transfer result with updated cows and history records
  */
 const transferShed = async ({
@@ -1056,10 +1133,19 @@ const transferShed = async ({
   transferredBy,
   transferDate,
   reason,
+  user = null,
 }) => {
   // 1. Validate gaushalaId
   if (!gaushalaId || !mongoose.Types.ObjectId.isValid(gaushalaId)) {
     throw new AppError('Valid gaushalaId is required', 400);
+  }
+
+  if (user && !isSuperAdmin(user) && user.gaushalaId) {
+    const userGaushalaStr = (user.gaushalaId._id || user.gaushalaId).toString();
+    if (gaushalaId.toString() !== userGaushalaStr) {
+      const roleLabel = isAdmin(user) ? 'Admin' : 'User';
+      throw new AppError(`Access denied: ${roleLabel} can only transfer cows in their assigned gaushala`, 403);
+    }
   }
 
   const gaushala = await Gaushala.findById(gaushalaId);

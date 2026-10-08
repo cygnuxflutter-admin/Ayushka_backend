@@ -10,8 +10,11 @@ router.get('/', auth, moduleController.getModules);
 router.get('/:id', auth, moduleController.getModuleById);
 
 // Write endpoints (Admin only)
+router.post('/bulk', adminOnly, moduleController.bulkCreateModules);
 router.post('/', adminOnly, moduleController.createModule);
+router.put('/:id', adminOnly, moduleController.updateModule);
 router.post('/:id/update', adminOnly, moduleController.updateModule);
+router.delete('/:id', adminOnly, moduleController.deleteModule);
 router.post('/:id/delete', adminOnly, moduleController.deleteModule);
 
 // Sub-module management endpoints (Admin only)

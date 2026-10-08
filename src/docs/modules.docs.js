@@ -53,6 +53,47 @@ const moduleAndPermissionPaths = {
       },
     },
   },
+  '/api/v1/modules/bulk': {
+    post: {
+      tags: ['Modules'],
+      summary: 'Bulk create or update modules (Admin only)',
+      operationId: 'bulkCreateModules',
+      security: [{ BearerAuth: [] }],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'array',
+              items: {
+                type: 'object',
+                required: ['name', 'code'],
+                properties: {
+                  name: { type: 'string', example: 'Medical Stock' },
+                  code: { type: 'string', example: 'MEDICAL_STOCK' },
+                  description: { type: 'string', example: 'Veterinary medicine inventory' },
+                  subModules: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        name: { type: 'string' },
+                        code: { type: 'string' },
+                        description: { type: 'string' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        '201': { description: 'Modules created/updated successfully' },
+      },
+    },
+  },
   '/api/v1/modules/{id}': {
     get: {
       tags: ['Modules'],

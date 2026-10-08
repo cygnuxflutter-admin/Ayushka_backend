@@ -18,21 +18,8 @@ const isValidDateFormat = (str) => {
   return /^\d{4}-\d{2}-\d{2}$/.test(str.trim());
 };
 
-const resolveGaushalaId = (req) => {
-  const body = req.body || {};
-  const query = req.query || {};
-  const params = req.params || {};
+const { resolveGaushalaId } = require('../utils/roles');
 
-  return (
-    (body.gaushalaId && typeof body.gaushalaId === 'string' && body.gaushalaId.trim()) ||
-    (body.gaushala_id && typeof body.gaushala_id === 'string' && body.gaushala_id.trim()) ||
-    (params.gaushalaId && typeof params.gaushalaId === 'string' && params.gaushalaId.trim()) ||
-    (params.gaushala_id && typeof params.gaushala_id === 'string' && params.gaushala_id.trim()) ||
-    (query.gaushalaId && typeof query.gaushalaId === 'string' && query.gaushalaId.trim()) ||
-    (query.gaushala_id && typeof query.gaushala_id === 'string' && query.gaushala_id.trim()) ||
-    null
-  );
-};
 
 // ==========================================
 // MILK PRODUCTION VALIDATORS

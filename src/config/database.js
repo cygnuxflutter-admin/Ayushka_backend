@@ -18,10 +18,15 @@ const models = [
 ];
 
 const seedDefaultData = async () => {
-  const [role, gaushala] = await Promise.all([
+  const [role, superAdminRole, gaushala] = await Promise.all([
     Role.findOneAndUpdate(
       { roleName: 'Admin' },
       { $setOnInsert: { roleName: 'Admin' } },
+      { new: true, upsert: true },
+    ),
+    Role.findOneAndUpdate(
+      { roleName: 'Superadmin' },
+      { $setOnInsert: { roleName: 'Superadmin' } },
       { new: true, upsert: true },
     ),
     Gaushala.findOneAndUpdate(
