@@ -1453,7 +1453,12 @@ const openApiSpec = {
         required: ['typeName'],
         properties: {
           _id: { type: 'string' },
+          gaushalaId: { type: 'string', example: '68d000000000000000000001' },
           typeName: { type: 'string', example: 'Dairy' },
+          isFemale: { type: 'boolean', example: true },
+          isMale: { type: 'boolean', example: true },
+          tag: { type: 'string', enum: ['isFemale', 'isMale', 'both'], example: 'both' },
+          gender: { type: 'string', enum: ['female', 'male', 'both'], example: 'both' },
           createdAt: { type: 'string', format: 'date-time' },
           updatedAt: { type: 'string', format: 'date-time' },
         },

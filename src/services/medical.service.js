@@ -434,7 +434,7 @@ class MedicalService {
 
     // Validate optional Cow reference
     if (cowId) {
-      const cowExists = await Cow.findOne({ _id: cowId, isDeleted: false });
+      const cowExists = await Cow.findOne({ _id: cowId, isDeletes: false });
       if (!cowExists) {
         throw new AppError('Cow not found', 404);
       }
@@ -442,7 +442,7 @@ class MedicalService {
 
     // Validate optional Shed reference
     if (shedId) {
-      const shedExists = await Shed.findOne({ _id: shedId, isDeleted: false });
+      const shedExists = await Shed.findOne({ _id: shedId, isDelete: false });
       if (!shedExists) {
         throw new AppError('Shed not found', 404);
       }

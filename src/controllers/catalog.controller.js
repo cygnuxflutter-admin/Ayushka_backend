@@ -102,6 +102,10 @@ const createCatalogController = (Model, field, userReference, label, options = {
         query.roleName = { $not: /^super[\s_-]?admin$/i };
       }
 
+      if (typeof options?.filterQuery === 'function') {
+        await options.filterQuery(req, query);
+      }
+
       const sortField = fields.find((f) => f !== 'gaushalaId' && f !== 'gaushala_id') || fields[0];
       let findQuery = Model.find(query).sort({ [sortField]: 1 });
       if (Model.schema.paths.gaushalaId) {
@@ -122,6 +126,10 @@ const createCatalogController = (Model, field, userReference, label, options = {
 
     create: asyncHandler(async (req, res) => {
       const values = readValues(req.body, req);
+
+      if (typeof options?.transformValues === 'function') {
+        await options.transformValues(req.body, req, values, { isUpdate: false });
+      }
 
       const user = req.user;
       if (isRoleModel && !isSuperAdmin(user)) {
@@ -222,6 +230,10 @@ const createCatalogController = (Model, field, userReference, label, options = {
 
     update: asyncHandler(async (req, res) => {
       const values = readValues(req.body, req);
+
+      if (typeof options?.transformValues === 'function') {
+        await options.transformValues(req.body, req, values, { id: req.params.id, isUpdate: true });
+      }
 
       const user = req.user;
       if (isRoleModel) {
