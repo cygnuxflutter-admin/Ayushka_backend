@@ -6,10 +6,8 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 const resolveMongoUri = () => {
-  const isLive = String(process.env.LIVE || '').trim().toLowerCase() === 'true';
-  let uri = isLive
-    ? process.env.MONGODB_URI_PRODUCTION
-    : process.env.MONGODB_URI_TEST;
+  const isLive = process.env.NODE_ENV === 'production' ? true : false;
+  let uri = isLive ? process.env.MONGODB_URI_PRODUCTION : process.env.MONGODB_URI_TEST;
 
   if (!uri || uri === 'null' || uri === 'undefined' || uri.trim() === '') {
     uri =
