@@ -41,6 +41,12 @@ const schema = new Schema(
       type: Boolean,
     },
 
+    breedingStatus: {
+      type: String,
+      enum: ['OPEN', 'IN_HEAT', 'MATED', 'PREGNANT', 'CALVED', 'DRY'],
+      default: 'OPEN',
+    },
+
     isActive: {
       type: Boolean,
       default: true,

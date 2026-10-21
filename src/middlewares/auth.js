@@ -18,8 +18,18 @@ const auth = asyncHandler(async (req, res, next) => {
     throw new AppError('Authorization is not configured', 503);
   }
 
-  const [scheme, token] = (req.get('authorization') || '').split(' ');
-  if (scheme?.toLowerCase() !== 'bearer' || !token) {
+  let token;
+  const authHeader = req.get('authorization') || '';
+  if (authHeader) {
+    const [scheme, t] = authHeader.split(' ');
+    if (scheme?.toLowerCase() === 'bearer' && t) {
+      token = t;
+    }
+  }
+  if (!token && req.query?.token) {
+    token = req.query.token;
+  }
+  if (!token) {
     throw new AppError('A bearer token is required', 401);
   }
 

@@ -7,6 +7,12 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 const resolveMongoUri = () => {
   const isLive = process.env.NODE_ENV === 'production' ? true : false;
+
+  console.log("NODE_ENV:", process.env.NODE_ENV);
+  console.log("NODE_ENV:", isLive ? "production" : "test");
+  
+  
+
   let uri = isLive ? process.env.MONGODB_URI_PRODUCTION : process.env.MONGODB_URI_TEST;
 
   if (!uri || uri === 'null' || uri === 'undefined' || uri.trim() === '') {

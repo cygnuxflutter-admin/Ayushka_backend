@@ -7,6 +7,8 @@ const BreedType = require('../models/BreedType');
 const Type = require('../models/Type');
 const User = require('../models/User');
 const Cow = require('../models/cow.model');
+const CowHeat = require('../models/CowHeat');
+const CowMating = require('../models/CowMating');
 const models = [
   Gaushala,
   Role,
@@ -15,6 +17,8 @@ const models = [
   Type,
   User,
   Cow,
+  CowHeat,
+  CowMating,
 ];
 
 const seedDefaultData = async () => {

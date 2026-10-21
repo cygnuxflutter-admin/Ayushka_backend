@@ -20,6 +20,8 @@ router.use('/notifications', require('./notification.routes'));
 router.use('/departments', require('./department.routes'));
 router.use('/workers', require('./worker.routes'));
 router.use('/milk', require('./milk.routes'));
+router.use('/heats', require('./heat.routes'));
+router.use('/matings', require('./mating.routes'));
 router.use('/dashboard', require('./dashboard.routes'));
 
 module.exports = router;

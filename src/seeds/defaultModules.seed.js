@@ -111,6 +111,22 @@ const DEFAULT_MODULES = [
       { name: 'Donor Receipts', code: 'DONATION_RECEIPT', description: 'Generate and print receipts' },
     ],
   },
+  {
+    name: 'Cow Heat Management',
+    code: 'HEAT_MGMT',
+    description: 'Track cow estrus/heat cycles, heat symptoms, and consecutive heat alerts',
+    subModules: [
+      { name: 'Heat Records & Alerts', code: 'HEAT_LIST', description: 'View, add, edit, and monitor cow heat cycles' },
+    ],
+  },
+  {
+    name: 'Cow Mating Management',
+    code: 'MATING_MGMT',
+    description: 'Manage cow mating (Natural/AI), pregnancy diagnosis (PD), and repeat breeding alerts',
+    subModules: [
+      { name: 'Mating & PD Records', code: 'MATING_LIST', description: 'Record mating, diagnose pregnancy, and track calving' },
+    ],
+  },
 ];
 
 module.exports = DEFAULT_MODULES;

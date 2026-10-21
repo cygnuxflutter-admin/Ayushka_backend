@@ -5,6 +5,8 @@ const treatmentService = require('./treatment.service');
 const medicalService = require('./medical.service');
 const feedService = require('./feed.service');
 const milkService = require('./milk.service');
+const heatService = require('./heat.service');
+const matingService = require('./mating.service');
 const notificationService = require('./notification.service');
 const AppError = require('../utils/AppError');
 
@@ -78,7 +80,31 @@ class DashboardService {
       return [];
     });
 
-    // 5. Fetch Unread notifications count
+    // 5. Fetch Heat alerts (Active heats ready for mating & 3+ Repeat heat alerts)
+    const [activeHeats, repeatHeatAlerts] = await Promise.all([
+      heatService.getActiveHeats(gaushalaId).catch((err) => {
+        console.error('Error fetching active heats for dashboard:', err);
+        return [];
+      }),
+      heatService.getRepeatHeatAlerts(gaushalaId).catch((err) => {
+        console.error('Error fetching repeat heat alerts for dashboard:', err);
+        return [];
+      }),
+    ]);
+
+    // 6. Fetch Mating alerts (Repeat breeders & Matings due for PD check)
+    const [repeatBreeders, pendingPDs] = await Promise.all([
+      matingService.getRepeatBreederAlerts(gaushalaId).catch((err) => {
+        console.error('Error fetching repeat breeder alerts for dashboard:', err);
+        return [];
+      }),
+      matingService.getPendingPDAlerts(gaushalaId).catch((err) => {
+        console.error('Error fetching pending PD alerts for dashboard:', err);
+        return [];
+      }),
+    ]);
+
+    // 7. Fetch Unread notifications count
     const unreadCountResult = await notificationService
       .getUnreadCount(gaushalaId, userId)
       .catch(() => ({ unreadCount: 0 }));
@@ -92,13 +118,21 @@ class DashboardService {
       lowMedicalStock: medicalLowStock.length,
       expiringMedicines: expiringBatches.length,
       lowFeedStock: feedLowStock.length,
+      activeHeats: activeHeats.length,
+      repeatHeatAlerts: repeatHeatAlerts.length,
+      repeatBreederAlerts: repeatBreeders.length,
+      pendingPDChecks: pendingPDs.length,
       totalAlerts:
         dueDoses.length +
         criticalCases.length +
         milkAlerts.length +
         medicalLowStock.length +
         expiringBatches.length +
-        feedLowStock.length,
+        feedLowStock.length +
+        activeHeats.length +
+        repeatHeatAlerts.length +
+        repeatBreeders.length +
+        pendingPDs.length,
       unreadNotifications: unreadCountResult.unreadCount || 0,
     };
 
@@ -119,6 +153,14 @@ class DashboardService {
       },
       feedAlerts: {
         lowStock: feedLowStock,
+      },
+      heatAlerts: {
+        activeHeats,
+        repeatHeatAlerts,
+      },
+      matingAlerts: {
+        repeatBreeders,
+        pendingPDs,
       },
     };
   }

@@ -6,6 +6,7 @@ const Type = require('../models/Type');
 const Shed = require('../models/Shed');
 const User = require('../models/User');
 const ShedTransferHistory = require('../models/ShedTransferHistory');
+const CowMating = require('../models/CowMating');
 const AppError = require('../utils/AppError');
 const { isSuperAdmin, isAdmin } = require('../utils/roles');
 
@@ -808,6 +809,427 @@ const generateCowImportTemplate = async ({ gaushalaId = null, user = null } = {}
 };
 
 /**
+ * Helper to calculate time difference in YY-MM-DD format (Years-Months-Days).
+ * Matches the Gaushala Ayushka format: e.g. 07-04-15 or 00-01-22.
+ *
+ * @param {string|Date} startDateStr Start date (e.g., DOB or calving date)
+ * @param {Date|string} [endDate] Reference end date (default: today)
+ * @returns {string} Formatted difference (YY-MM-DD) or empty string
+ */
+const calculateDiffYYMMDD = (startDateStr, endDate = new Date()) => {
+  if (!startDateStr || typeof startDateStr !== 'string') return '';
+  const trimmed = startDateStr.trim();
+  if (!trimmed || trimmed === '-') return '';
+
+  const start = new Date(trimmed);
+  if (isNaN(start.getTime())) return '';
+
+  const end = endDate instanceof Date ? endDate : new Date(endDate);
+  if (isNaN(end.getTime())) return '';
+
+  let years = end.getFullYear() - start.getFullYear();
+  let months = end.getMonth() - start.getMonth();
+  let days = end.getDate() - start.getDate();
+
+  if (days < 0) {
+    months -= 1;
+    const prevMonthDays = new Date(end.getFullYear(), end.getMonth(), 0).getDate();
+    days += prevMonthDays;
+  }
+  if (months < 0) {
+    years -= 1;
+    months += 12;
+  }
+  if (years < 0) return '';
+
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(years)}-${pad(months)}-${pad(days)}`;
+};
+
+/**
+ * Service to export complete Gaushala Cattle Records into Excel matching the uploaded template.
+ * Includes:
+ * 1. Title Row: "Gaushala Ayushka _ All Cattle Record" + Date
+ * 2. Gujarati Header Row: ક્રમ, ગાય નંબર, ગાયનું નામ, જન્મ તારીખ, ઉંમર, માતાનો નંબર, માતાનું નામ, પિતાનો નંબર, પિતાનું નામ, વેતર, છેલ્લી વિયાણની તારીખ, વિયાણનો સમય, વાછરડું, ફલિત તારીખ, ગાભણનો સમય, રિમાર્ક
+ * 3. English Header Row: SL. NO., CATTLE ID, CATTLE NAME, D.O.B., Age (YY-MM-DD), DAM ID, DAM NAME, SIRE ID, SIRE NAME, Calving, LAST D. DATE, D. TIME (yy-mm-dd), Calf (M/F), PREG. DATE, PREG. DAYS (yy-mm-dd), Remark
+ * 4. Female Cows Table
+ * 5. Bull Record Table (નંદી રેકોર્ડ)
+ *
+ * @param {Object} options Options containing gaushalaId, user, date
+ * @returns {Promise<Buffer>} Excel file buffer
+ */
+const exportCowsExcel = async ({ gaushalaId = null, user = null, date = null } = {}) => {
+  let cowFilter = { isDelete: { $ne: true } };
+
+  if (user && !isSuperAdmin(user) && user.gaushalaId) {
+    cowFilter.gaushala_id = user.gaushalaId._id || user.gaushalaId;
+  } else if (gaushalaId) {
+    cowFilter.gaushala_id = gaushalaId;
+  }
+
+  const referenceDate = date && /^\d{4}-\d{2}-\d{2}$/.test(date.trim())
+    ? new Date(date.trim())
+    : new Date();
+
+  const reportDateStr = referenceDate.toISOString().split('T')[0];
+
+  // 1. Fetch all cows with populated relationships
+  const allCows = await Cow.find(cowFilter)
+    .populate('breed', 'breedName')
+    .populate('type', 'typeName')
+    .populate('shed_id', 'shedNumber')
+    .populate('gaushala_id', 'gaushalaName')
+    .populate('dam_id', 'tag_id calf_name')
+    .populate('sair_id', 'tag_id calf_name');
+
+  const cowIds = allCows.map((c) => c._id);
+
+  // 2. Fetch all mating records for pregnancy and calving details
+  const matings = await CowMating.find({
+    cowId: { $in: cowIds },
+    isDeleted: false,
+  }).sort({ matingDate: -1, actualCalvingDate: -1, createdAt: -1 });
+
+  const matingsByCowId = {};
+  for (const m of matings) {
+    const cid = m.cowId?.toString();
+    if (!cid) continue;
+    if (!matingsByCowId[cid]) matingsByCowId[cid] = [];
+    matingsByCowId[cid].push(m);
+  }
+
+  // 3. Fetch all offspring (calves) whose dam_id is one of these cows
+  const calves = await Cow.find({
+    dam_id: { $in: cowIds },
+    isDelete: { $ne: true },
+  }).sort({ dob: -1, createdAt: -1 });
+
+  const calvesByDamId = {};
+  for (const c of calves) {
+    const did = c.dam_id?._id ? c.dam_id._id.toString() : c.dam_id?.toString();
+    if (!did) continue;
+    if (!calvesByDamId[did]) calvesByDamId[did] = [];
+    calvesByDamId[did].push(c);
+  }
+
+  // 4. Separate female cows and bulls
+  const femaleCows = allCows.filter((c) => c.isFemale !== false);
+  const bulls = allCows.filter((c) => c.isFemale === false);
+
+  const sortByTag = (a, b) => {
+    const numA = parseInt(a.tag_id, 10);
+    const numB = parseInt(b.tag_id, 10);
+    if (!isNaN(numA) && !isNaN(numB)) {
+      return numA - numB;
+    }
+    return String(a.tag_id || '').localeCompare(String(b.tag_id || ''), undefined, { numeric: true });
+  };
+
+  femaleCows.sort(sortByTag);
+  bulls.sort(sortByTag);
+
+  // 5. Build Excel Workbook
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Ayushka Gaushala System';
+  workbook.created = new Date();
+
+  const worksheet = workbook.addWorksheet('All_Cattle_Record', {
+    views: [{ showGridLines: true }],
+  });
+
+  // Set Column Widths (A to P)
+  worksheet.columns = [
+    { key: 'col1', width: 8 },   // SL. NO.
+    { key: 'col2', width: 14 },  // CATTLE ID
+    { key: 'col3', width: 18 },  // CATTLE NAME
+    { key: 'col4', width: 14 },  // D.O.B.
+    { key: 'col5', width: 18 },  // Age (YY-MM-DD)
+    { key: 'col6', width: 13 },  // DAM ID
+    { key: 'col7', width: 16 },  // DAM NAME
+    { key: 'col8', width: 13 },  // SIRE ID
+    { key: 'col9', width: 16 },  // SIRE NAME
+    { key: 'col10', width: 10 }, // Calving
+    { key: 'col11', width: 16 }, // LAST D. DATE
+    { key: 'col12', width: 18 }, // D. TIME (yy-mm-dd)
+    { key: 'col13', width: 13 }, // Calf (M/F)
+    { key: 'col14', width: 16 }, // PREG. DATE
+    { key: 'col15', width: 18 }, // PREG. DAYS (yy-mm-dd)
+    { key: 'col16', width: 26 }, // Remark
+  ];
+
+  const thinBorder = {
+    top: { style: 'thin', color: { argb: 'FFD0D7DE' } },
+    left: { style: 'thin', color: { argb: 'FFD0D7DE' } },
+    bottom: { style: 'thin', color: { argb: 'FFD0D7DE' } },
+    right: { style: 'thin', color: { argb: 'FFD0D7DE' } },
+  };
+
+  // Row 1: Title
+  const titleRow = worksheet.addRow(['Gaushala Ayushka _ All Cattle Record', '', '', '', '', '', '', '', '', '', '', '', '', '', '', reportDateStr]);
+  titleRow.height = 30;
+  worksheet.mergeCells('A1:O1');
+  const titleCell = worksheet.getCell('A1');
+  titleCell.font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FF1B5E20' } };
+  titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
+
+  const dateCell = worksheet.getCell('P1');
+  dateCell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF333333' } };
+  dateCell.alignment = { vertical: 'middle', horizontal: 'right' };
+
+  // Row 2: Gujarati Header Row
+  const gujaratiHeaders = [
+    'ક્રમ',
+    'ગાય નંબર',
+    'ગાયનું નામ',
+    'જન્મ તારીખ',
+    'ઉંમર',
+    'માતાનો નંબર',
+    'માતાનું નામ',
+    'પિતાનો નંબર',
+    'પિતાનું નામ',
+    'વેતર',
+    'છેલ્લી વિયાણની તારીખ',
+    'વિયાણનો સમય',
+    'વાછરડું ',
+    'ફલિત તારીખ',
+    'ગાભણનો સમય',
+    'રિમાર્ક',
+  ];
+  const row2 = worksheet.addRow(gujaratiHeaders);
+  row2.height = 24;
+  row2.eachCell((cell) => {
+    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E7D32' } }; // Green
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    cell.border = thinBorder;
+  });
+
+  // Row 3: English Header Row
+  const englishHeaders = [
+    'SL. NO.',
+    'CATTLE ID',
+    'CATTLE NAME',
+    'D.O.B.',
+    '….. Age ….. (YY-MM-DD)',
+    'DAM ID',
+    'DAM NAME',
+    'SIRE ID',
+    'SIRE NAME',
+    'Calving',
+    'LAST D. DATE',
+    '….. D. TIME ….. (yy-mm-dd)',
+    'Calf (M/F)',
+    'PREG. DATE',
+    '...PREG. DAYS... (yy-mm-dd)',
+    'Remark',
+  ];
+  const row3 = worksheet.addRow(englishHeaders);
+  row3.height = 22;
+  row3.eachCell((cell) => {
+    cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF388E3C' } }; // Lighter Green
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    cell.border = thinBorder;
+  });
+
+  // Helper to format a single cow's data row
+  const formatCowRowData = (cow, index) => {
+    const cId = cow._id.toString();
+    const cowMatings = matingsByCowId[cId] || [];
+    const calvedMatings = cowMatings.filter((m) => m.status === 'CALVED' || m.actualCalvingDate);
+    const cowCalves = calvesByDamId[cId] || [];
+
+    // Age
+    const age = calculateDiffYYMMDD(cow.dob, referenceDate);
+
+    // Calving count (વેતર)
+    let calvingCount = '';
+    if (calvedMatings.length > 0) {
+      calvingCount = calvedMatings.length;
+    } else if (cowCalves.length > 0) {
+      calvingCount = cowCalves.length;
+    }
+
+    // Last delivery date
+    let lastDeliveryDate = '';
+    const latestCalved = calvedMatings[0];
+    if (latestCalved?.actualCalvingDate) {
+      lastDeliveryDate = latestCalved.actualCalvingDate;
+    } else if (cowCalves[0]?.dob) {
+      lastDeliveryDate = cowCalves[0].dob;
+    } else if (cow.delivery_time && /^\d{4}-\d{2}-\d{2}$/.test(cow.delivery_time.trim())) {
+      lastDeliveryDate = cow.delivery_time.trim();
+    }
+
+    // Delivery time elapsed (D. TIME)
+    const deliveryTimeElapsed = lastDeliveryDate
+      ? calculateDiffYYMMDD(lastDeliveryDate, referenceDate)
+      : cow.delivery_time || '';
+
+    // Latest Calf status
+    let calfStatus = '';
+    if (cowCalves.length > 0) {
+      const latestCalf = cowCalves[0];
+      if (latestCalf.isDied) {
+        calfStatus = 'Died';
+      } else if (latestCalf.remark && /donate/i.test(latestCalf.remark)) {
+        calfStatus = 'Donate';
+      } else if (latestCalf.isFemale === true) {
+        calfStatus = 'F';
+      } else if (latestCalf.isFemale === false) {
+        calfStatus = 'M';
+      }
+    }
+
+    // Pregnancy Date & Pregnancy Days
+    const pregnantMating = cowMatings.find((m) => m.status === 'PREGNANT' || m.pdResult === 'POSITIVE') || cowMatings[0];
+    let pregDate = '';
+    let pregDaysElapsed = '';
+    if (pregnantMating?.matingDate) {
+      pregDate = pregnantMating.matingDate;
+      pregDaysElapsed = calculateDiffYYMMDD(pregDate, referenceDate);
+    }
+
+    // Dam & Sire info
+    const damId = cow.dam_id?.tag_id || (typeof cow.dam_id === 'string' ? cow.dam_id : '');
+    const damName = cow.dam_id?.calf_name || '';
+    const sireId = cow.sair_id?.tag_id || (typeof cow.sair_id === 'string' ? cow.sair_id : '');
+    const sireName = cow.sair_id?.calf_name || '';
+
+    return [
+      index + 1,
+      cow.tag_id || '',
+      cow.calf_name || '',
+      cow.dob || '',
+      age,
+      damId,
+      damName,
+      sireId,
+      sireName,
+      calvingCount,
+      lastDeliveryDate,
+      deliveryTimeElapsed,
+      calfStatus,
+      pregDate,
+      pregDaysElapsed,
+      cow.remark || '',
+    ];
+  };
+
+  // Populate Female Cows
+  femaleCows.forEach((cow, idx) => {
+    const rowValues = formatCowRowData(cow, idx);
+    const row = worksheet.addRow(rowValues);
+    row.height = 20;
+
+    const isEven = idx % 2 === 0;
+    const bgArgb = isEven ? 'FFFFFFFF' : 'FFF9FBF9';
+
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      cell.font = { name: 'Arial', size: 9 };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgArgb } };
+      cell.border = thinBorder;
+
+      if ([3, 7, 9, 16].includes(colNumber)) {
+        cell.alignment = { vertical: 'middle', horizontal: 'left' };
+      } else {
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      }
+    });
+  });
+
+  // Empty Separator Rows
+  worksheet.addRow([]);
+  worksheet.addRow([]);
+
+  // Bull Section
+  const bullGujaratiHeaders = [
+    'ક્રમ',
+    'નંદીનો નંબર',
+    'નંદીનું નામ',
+    'જન્મ તારીખ',
+    'ઉંમર',
+    'માતાનો નંબર',
+    'માતાનું નામ',
+    'પિતાનો નંબર',
+    'પિતાનું નામ',
+    'રિમાર્ક',
+  ];
+
+  const bullEnglishHeaders = [
+    'SL. NO.',
+    'BULL ID',
+    'CATTLE NAME',
+    'D.O.B.',
+    '….. Age ….. (YY-MM-DD)',
+    'DAM ID',
+    'DAM NAME',
+    'SIRE ID',
+    'SIRE NAME',
+    'Remark',
+  ];
+
+  const bullRow1 = worksheet.addRow(bullGujaratiHeaders);
+  bullRow1.height = 24;
+  bullRow1.eachCell((cell) => {
+    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1565C0' } }; // Blue
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    cell.border = thinBorder;
+  });
+
+  const bullRow2 = worksheet.addRow(bullEnglishHeaders);
+  bullRow2.height = 22;
+  bullRow2.eachCell((cell) => {
+    cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1976D2' } }; // Lighter Blue
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    cell.border = thinBorder;
+  });
+
+  bulls.forEach((bull, idx) => {
+    const age = calculateDiffYYMMDD(bull.dob, referenceDate);
+    const damId = bull.dam_id?.tag_id || (typeof bull.dam_id === 'string' ? bull.dam_id : '');
+    const damName = bull.dam_id?.calf_name || '';
+    const sireId = bull.sair_id?.tag_id || (typeof bull.sair_id === 'string' ? bull.sair_id : '');
+    const sireName = bull.sair_id?.calf_name || '';
+
+    const rowValues = [
+      idx + 1,
+      bull.tag_id || '',
+      bull.calf_name || '',
+      bull.dob || '',
+      age,
+      damId,
+      damName,
+      sireId,
+      sireName,
+      bull.remark || '',
+    ];
+
+    const row = worksheet.addRow(rowValues);
+    row.height = 20;
+
+    const isEven = idx % 2 === 0;
+    const bgArgb = isEven ? 'FFFFFFFF' : 'FFF3F8FD';
+
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      cell.font = { name: 'Arial', size: 9 };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgArgb } };
+      cell.border = thinBorder;
+
+      if ([3, 7, 9, 10].includes(colNumber)) {
+        cell.alignment = { vertical: 'middle', horizontal: 'left' };
+      } else {
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      }
+    });
+  });
+
+  return await workbook.xlsx.writeBuffer();
+};
+
+/**
  * Service to update an existing cow.
  *
  * @param {string} cowId ID of the cow to update
@@ -1422,6 +1844,7 @@ module.exports = {
   getCowCounts,
   importCowsFromExcel,
   generateCowImportTemplate,
+  exportCowsExcel,
   transferShed,
   getShedTransferHistory,
   getCowShedHistory,

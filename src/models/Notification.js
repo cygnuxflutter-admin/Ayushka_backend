@@ -26,13 +26,32 @@ const notificationSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ['TREATMENT_DOSE', 'MEDICAL_STOCK_ALERT', 'GENERAL', 'MILK_PRODUCTION_ALERT'],
-      default: 'TREATMENT_DOSE',
+      enum: [
+        'TREATMENT_DOSE',
+        'MEDICAL_STOCK_ALERT',
+        'GENERAL',
+        'MILK_PRODUCTION_ALERT',
+        'HEAT_ALERT',
+        'MATING_ALERT',
+      ],
+      default: 'GENERAL',
       index: true,
     },
     treatmentId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'CowTreatment',
+      default: null,
+      index: true,
+    },
+    heatId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'CowHeat',
+      default: null,
+      index: true,
+    },
+    matingId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'CowMating',
       default: null,
       index: true,
     },
@@ -99,6 +118,20 @@ notificationSchema.virtual('cow', {
 notificationSchema.virtual('treatment', {
   ref: 'CowTreatment',
   localField: 'treatmentId',
+  foreignField: '_id',
+  justOne: true,
+});
+
+notificationSchema.virtual('heat', {
+  ref: 'CowHeat',
+  localField: 'heatId',
+  foreignField: '_id',
+  justOne: true,
+});
+
+notificationSchema.virtual('mating', {
+  ref: 'CowMating',
+  localField: 'matingId',
   foreignField: '_id',
   justOne: true,
 });

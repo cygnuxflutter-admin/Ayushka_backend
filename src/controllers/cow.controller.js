@@ -128,6 +128,33 @@ const downloadImportTemplate = asyncHandler(async (req, res) => {
 });
 
 /**
+ * Controller to handle GET /api/v1/cows/export-excel
+ * Exports complete cattle records matching the uploaded Gaushala format.
+ */
+const exportCowsExcel = asyncHandler(async (req, res) => {
+  let gaushalaId = req.query.gaushalaId || req.query.gaushala_id || null;
+  if (req.user && !isSuperAdmin(req.user) && req.user.gaushalaId) {
+    gaushalaId = (req.user.gaushalaId._id || req.user.gaushalaId).toString();
+  }
+
+  const buffer = await cowService.exportCowsExcel({
+    gaushalaId,
+    user: req.user,
+    date: req.query.date,
+  });
+
+  const today = req.query.date && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date.trim())
+    ? req.query.date.trim()
+    : new Date().toISOString().split('T')[0];
+
+  const filename = `Gaushala_Ayushka_All_Cattle_Record_${today}.xlsx`;
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(buffer);
+});
+
+/**
  * Controller to handle PUT /api/v1/cows/:id
  */
 const updateCow = asyncHandler(async (req, res) => {
@@ -328,6 +355,7 @@ module.exports = {
   getCows,
   importCows,
   downloadImportTemplate,
+  exportCowsExcel,
   transferShed,
   getShedTransferHistory,
 };

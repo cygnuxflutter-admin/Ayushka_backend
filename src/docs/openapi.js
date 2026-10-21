@@ -4,6 +4,8 @@ const medicalStockPaths = require('./medical.docs');
 const treatmentPaths = require('./treatment.docs');
 const workerAndDepartmentPaths = require('./worker.docs');
 const milkPaths = require('./milk.docs');
+const heatPaths = require('./heat.docs');
+const matingPaths = require('./mating.docs');
 
 const apiErrorResponse = (description) => ({
   description,
@@ -1119,6 +1121,40 @@ const openApiSpec = {
         },
       },
     },
+    '/api/v1/cows/export-excel': {
+      get: {
+        tags: ['Cows'],
+        summary: 'Export complete cattle records (Cows, Bulls, Pedigree, Calving history) to Excel',
+        description: 'Exports complete Gaushala cattle records matching the official All Cattle Record format with dual Gujarati/English headers.',
+        operationId: 'exportCowsExcel',
+        parameters: [
+          {
+            name: 'gaushalaId',
+            in: 'query',
+            required: false,
+            schema: { type: 'string' },
+            description: 'Optional Gaushala ID filter (auto-scoped for non-superadmin users)',
+          },
+          {
+            name: 'date',
+            in: 'query',
+            required: false,
+            schema: { type: 'string', example: '2026-10-14' },
+            description: 'Reference date for calculating Age and Days elapsed (YYYY-MM-DD)',
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Complete Gaushala Cattle Records Excel file (.xlsx).',
+            content: {
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': {
+                schema: { type: 'string', format: 'binary' },
+              },
+            },
+          },
+        },
+      },
+    },
     '/api/v1/cows/import-template': {
       get: {
         tags: ['Cows'],
@@ -1398,6 +1434,8 @@ const openApiSpec = {
     ...treatmentPaths,
     ...workerAndDepartmentPaths,
     ...milkPaths,
+    ...heatPaths,
+    ...matingPaths,
   },
   components: {
     securitySchemes: {

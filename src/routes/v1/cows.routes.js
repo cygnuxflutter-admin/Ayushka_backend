@@ -8,6 +8,7 @@ const router = express.Router();
 
 // Read endpoints (Parent: /api/v1/cows)
 router.get('/', checkPermission('COW', 'COW_LIST', 'view'), cowController.getCows);
+router.get('/export-excel', checkPermission('COW', 'COW_LIST', 'view'), cowController.exportCowsExcel);
 
 router.get('/import-template', cowController.downloadImportTemplate);
 router.post('/upload-excel', checkPermission('COW', 'COW_LIST', 'add'), uploadExcel, cowController.importCows);
