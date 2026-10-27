@@ -18,6 +18,30 @@ const isValidDateFormat = (str) => {
   return /^\d{4}-\d{2}-\d{2}$/.test(str.trim());
 };
 
+const getTodayDateString = () => {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    return formatter.format(new Date());
+  } catch (e) {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+};
+
+const isFutureDate = (dateStr) => {
+  if (!dateStr || typeof dateStr !== 'string') return false;
+  const today = getTodayDateString();
+  return dateStr.trim() > today;
+};
+
 const { resolveGaushalaId } = require('../utils/roles');
 
 
@@ -38,6 +62,10 @@ const validateSingleProduction = (req, res, next) => {
 
   if (!body.date || !isValidDateFormat(body.date)) {
     return next(new AppError('Valid production date is required in YYYY-MM-DD format', 400));
+  }
+
+  if (isFutureDate(body.date)) {
+    return next(new AppError('Production date cannot be a future date', 400));
   }
 
   const shift = (body.shift || '').toString().toLowerCase().trim();
@@ -88,6 +116,10 @@ const validateBulkProduction = (req, res, next) => {
 
   if (!body.date || !isValidDateFormat(body.date)) {
     return next(new AppError('Valid production date is required in YYYY-MM-DD format', 400));
+  }
+
+  if (isFutureDate(body.date)) {
+    return next(new AppError('Production date cannot be a future date', 400));
   }
 
   const shift = (body.shift || '').toString().toLowerCase().trim();
@@ -255,12 +287,138 @@ const validateCreateDisposal = (req, res, next) => {
   next();
 };
 
+// ==========================================
+// MILK PRODUCTION MATRIX (DATE RANGE) VALIDATOR
+// ==========================================
+
+const normalizeAndValidateDate = (dateStr, paramName) => {
+  if (!dateStr || typeof dateStr !== 'string') {
+    return { error: `${paramName} is mandatory` };
+  }
+  const trimmed = dateStr.trim();
+  if (!trimmed) {
+    return { error: `${paramName} is mandatory` };
+  }
+
+  let y, m, d;
+
+  // Case 1: YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    [y, m, d] = trimmed.split('-').map(Number);
+  }
+  // Case 2: MM/DD/YYYY
+  else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(trimmed)) {
+    const parts = trimmed.split('/').map(Number);
+    m = parts[0];
+    d = parts[1];
+    y = parts[2];
+  }
+  // Case 3: DD-MM-YYYY
+  else if (/^\d{1,2}-\d{1,2}-\d{4}$/.test(trimmed)) {
+    const parts = trimmed.split('-').map(Number);
+    d = parts[0];
+    m = parts[1];
+    y = parts[2];
+  } else {
+    return { error: `${paramName} must be in YYYY-MM-DD format (e.g. 2026-10-18)` };
+  }
+
+  const utcDate = new Date(Date.UTC(y, m - 1, d));
+  if (
+    utcDate.getUTCFullYear() !== y ||
+    utcDate.getUTCMonth() !== m - 1 ||
+    utcDate.getUTCDate() !== d
+  ) {
+    return { error: `Invalid calendar date for ${paramName}` };
+  }
+
+  const normalized = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  return { date: normalized, utcDate, y, m, d };
+};
+
+const validateMilkMatrixQuery = (req, res, next) => {
+  const query = req.query || {};
+
+  const gaushalaId = resolveGaushalaId(req);
+  if (!isValidObjectId(gaushalaId)) {
+    return next(new AppError('Valid gaushalaId is required', 400));
+  }
+
+  const rawStart = query.startDate || query.start_date;
+  const rawEnd = query.endDate || query.end_date;
+
+  // Condition 3: Both dates are mandatory
+  if (!rawStart && !rawEnd) {
+    return next(new AppError('Both startDate and endDate are mandatory', 400));
+  }
+  if (!rawStart) {
+    return next(new AppError('startDate is mandatory', 400));
+  }
+  if (!rawEnd) {
+    return next(new AppError('endDate is mandatory', 400));
+  }
+
+  const startRes = normalizeAndValidateDate(rawStart, 'startDate');
+  if (startRes.error) {
+    return next(new AppError(startRes.error, 400));
+  }
+
+  const endRes = normalizeAndValidateDate(rawEnd, 'endDate');
+  if (endRes.error) {
+    return next(new AppError(endRes.error, 400));
+  }
+
+  const startMs = startRes.utcDate.getTime();
+  const endMs = endRes.utcDate.getTime();
+
+  // Condition 2: Start date should be lower than or equal to end date
+  if (startMs > endMs) {
+    return next(
+      new AppError(
+        'Start date must be lower than or equal to end date (startDate cannot be greater than endDate)',
+        400,
+      ),
+    );
+  }
+
+  // Condition 1: Date range should be 30 days
+  const diffDays = Math.round((endMs - startMs) / (1000 * 60 * 60 * 24));
+  if (diffDays > 30) {
+    return next(new AppError('Date range cannot exceed 30 days', 400));
+  }
+
+  const cowId = query.cowId || query.cow_id;
+  if (cowId && !isValidObjectId(cowId)) {
+    return next(new AppError('Invalid cowId format', 400));
+  }
+
+  const shedId = query.shedId || query.shed_id;
+  if (shedId && !isValidObjectId(shedId)) {
+    return next(new AppError('Invalid shedId format', 400));
+  }
+
+  req.validatedQuery = {
+    gaushalaId,
+    startDate: startRes.date,
+    endDate: endRes.date,
+    diffDays,
+    cowId: cowId || null,
+    shedId: shedId || null,
+    includeAllCows: query.includeAllCows === 'true' || query.allCows === 'true',
+    format: (query.format || '').toLowerCase().trim(),
+  };
+
+  next();
+};
+
 module.exports = {
   isValidObjectId,
   isValidDateFormat,
+  isFutureDate,
   resolveGaushalaId,
   validateSingleProduction,
   validateBulkProduction,
   validateCreateDistribution,
   validateCreateDisposal,
+  validateMilkMatrixQuery,
 };

@@ -2,6 +2,7 @@ const milkService = require('../services/milk.service');
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
 const { resolveGaushalaId } = require('../validators/milk.validator');
+const { isSuperAdmin, isAdmin } = require('../utils/roles');
 
 /**
  * Record single cow milk production entry
@@ -199,6 +200,124 @@ const checkMonthlyAlerts = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * Get cow-wise milk production matrix for date range (Morning & Evening grid)
+ */
+const getMilkMatrix = asyncHandler(async (req, res) => {
+  const query = req.validatedQuery || req.query;
+
+  // Support direct Excel format download via query param: ?format=excel
+  if (query.format === 'excel') {
+    const buffer = await milkService.exportMilkMatrixExcel(query);
+    const filename = `Milk_Production_Matrix_${query.startDate}_to_${query.endDate}.xlsx`;
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(buffer);
+  }
+
+  const result = await milkService.getMilkProductionMatrix(query);
+
+  res.status(200).json({
+    success: true,
+    message: 'Milk production matrix fetched successfully',
+    data: result,
+  });
+});
+
+/**
+ * Export cow-wise milk production matrix as styled Excel spreadsheet (.xlsx)
+ */
+const exportMilkMatrixExcel = asyncHandler(async (req, res) => {
+  const query = req.validatedQuery || req.query;
+  const buffer = await milkService.exportMilkMatrixExcel(query);
+  const filename = `Milk_Production_Matrix_${query.startDate}_to_${query.endDate}.xlsx`;
+
+  res.setHeader(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  );
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(buffer);
+});
+
+/**
+ * Controller to handle GET /api/v1/milk/import-template
+ * Generates dynamic Excel template with database dropdowns (Cows, Workers, Shifts, Gaushalas).
+ */
+const downloadImportTemplate = asyncHandler(async (req, res) => {
+  let gaushalaId = req.query.gaushalaId || req.query.gaushala_id || null;
+  if (req.user && !isSuperAdmin(req.user) && req.user.gaushalaId) {
+    gaushalaId = (req.user.gaushalaId._id || req.user.gaushalaId).toString();
+  }
+
+  const buffer = await milkService.generateMilkImportTemplate({
+    gaushalaId,
+    user: req.user,
+    date: req.query.date,
+    shift: req.query.shift,
+  });
+
+  const filename = 'milk_production_import_template.xlsx';
+  res.setHeader(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  );
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(buffer);
+});
+
+/**
+ * Controller to handle POST /api/v1/milk/upload-excel (or /import-excel)
+ * Bulk imports milk production records from uploaded Excel / CSV file.
+ */
+const importMilkProduction = asyncHandler(async (req, res) => {
+  if (!req.file || !req.file.buffer) {
+    throw new AppError('Excel file is required. Please upload an .xlsx, .xls, or .csv file.', 400);
+  }
+
+  const addedBy = req.user?._id?.toString() || req.body?.addedBy;
+  if (!addedBy) {
+    throw new AppError('addedBy or authentication is required', 400);
+  }
+
+  let defaultGaushalaId =
+    req.body?.gaushalaId || req.body?.gaushala_id || req.query?.gaushalaId || null;
+
+  // Role-based Gaushala check:
+  if (req.user && !isSuperAdmin(req.user) && req.user.gaushalaId) {
+    const userGaushalaStr = (req.user.gaushalaId._id || req.user.gaushalaId).toString();
+    if (defaultGaushalaId && defaultGaushalaId.toString().trim() !== userGaushalaStr) {
+      const roleLabel = isAdmin(req.user) ? 'Admin' : 'User';
+      throw new AppError(
+        `Access denied: ${roleLabel} can only import milk records for their assigned gaushala`,
+        403,
+      );
+    }
+    defaultGaushalaId = userGaushalaStr;
+  }
+
+  const result = await milkService.importMilkProductionFromExcel({
+    fileBuffer: req.file.buffer,
+    addedBy,
+    defaultGaushalaId,
+    user: req.user,
+  });
+
+  const message = `Import completed: ${result.importedCount} milk production records imported successfully${
+    result.failedCount > 0 ? `, ${result.failedCount} rows failed` : ''
+  }`;
+
+  res.status(200).json({
+    success: true,
+    message,
+    data: result,
+  });
+});
+
 module.exports = {
   recordProduction,
   recordBulkProduction,
@@ -210,4 +329,8 @@ module.exports = {
   getDisposalList,
   getFridgeStock,
   checkMonthlyAlerts,
+  getMilkMatrix,
+  exportMilkMatrixExcel,
+  downloadImportTemplate,
+  importMilkProduction,
 };

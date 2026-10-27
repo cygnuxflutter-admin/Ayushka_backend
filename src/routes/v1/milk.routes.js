@@ -5,8 +5,11 @@ const {
   validateBulkProduction,
   validateCreateDistribution,
   validateCreateDisposal,
+  validateMilkMatrixQuery,
 } = require('../../validators/milk.validator');
 const checkPermission = require('../../middlewares/checkPermission');
+const uploadExcel = require('../../middlewares/excelUpload');
+const optionalAuth = require('../../middlewares/optionalAuth');
 
 const router = express.Router();
 
@@ -19,6 +22,22 @@ router.get(
   '/daily-summary',
   checkPermission('MILK_MGMT', 'MILK_PRODUCTION', 'view'),
   milkController.getDailySummary,
+);
+
+// Date-range milk production matrix (Morning & Evening cattle-wise grid)
+router.get(
+  ['/matrix', '/production-matrix'],
+  checkPermission('MILK_MGMT', 'MILK_PRODUCTION', 'view'),
+  validateMilkMatrixQuery,
+  milkController.getMilkMatrix,
+);
+
+// Date-range milk production matrix Excel export (.xlsx)
+router.get(
+  ['/matrix/export-excel', '/production-matrix/export-excel'],
+  checkPermission('MILK_MGMT', 'MILK_PRODUCTION', 'view'),
+  validateMilkMatrixQuery,
+  milkController.exportMilkMatrixExcel,
 );
 
 // All dates with remaining milk stored in fridge
@@ -38,6 +57,17 @@ router.post(
 // ==========================================
 // 2. MILK PRODUCTION
 // ==========================================
+
+// Download dynamic Milk Production Excel Import Template (with DB dropdowns)
+router.get('/import-template', optionalAuth, milkController.downloadImportTemplate);
+
+// Upload Excel file to bulk import Milk Production entries
+router.post(
+  ['/upload-excel', '/import-excel'],
+  checkPermission('MILK_MGMT', 'MILK_PRODUCTION', 'add'),
+  uploadExcel,
+  milkController.importMilkProduction,
+);
 
 // List cow-wise milk production records
 router.get(

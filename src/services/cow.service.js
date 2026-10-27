@@ -850,8 +850,8 @@ const calculateDiffYYMMDD = (startDateStr, endDate = new Date()) => {
  * Service to export complete Gaushala Cattle Records into Excel matching the uploaded template.
  * Includes:
  * 1. Title Row: "Gaushala Ayushka _ All Cattle Record" + Date
- * 2. Gujarati Header Row: ક્રમ, ગાય નંબર, ગાયનું નામ, જન્મ તારીખ, ઉંમર, માતાનો નંબર, માતાનું નામ, પિતાનો નંબર, પિતાનું નામ, વેતર, છેલ્લી વિયાણની તારીખ, વિયાણનો સમય, વાછરડું, ફલિત તારીખ, ગાભણનો સમય, રિમાર્ક
- * 3. English Header Row: SL. NO., CATTLE ID, CATTLE NAME, D.O.B., Age (YY-MM-DD), DAM ID, DAM NAME, SIRE ID, SIRE NAME, Calving, LAST D. DATE, D. TIME (yy-mm-dd), Calf (M/F), PREG. DATE, PREG. DAYS (yy-mm-dd), Remark
+ * 2. Gujarati Header Row: ક્રમ, ગાય નંબર, ગાયનું નામ, ગાયનો પ્રકાર, જન્મ તારીખ, ઉંમર, માતાનો નંબર, માતાનું નામ, પિતાનો નંબર, પિતાનું નામ, વેતર, છેલ્લી વિયાણની તારીખ, વિયાણનો સમય, વાછરડું, ફલિત તારીખ, ગાભણનો સમય, રિમાર્ક
+ * 3. English Header Row: SL. NO., CATTLE ID, CATTLE NAME, CATTLE TYPE, D.O.B., Age (YY-MM-DD), DAM ID, DAM NAME, SIRE ID, SIRE NAME, Calving, LAST D. DATE, D. TIME (yy-mm-dd), Calf (M/F), PREG. DATE, PREG. DAYS (yy-mm-dd), Remark
  * 4. Female Cows Table
  * 5. Bull Record Table (નંદી રેકોર્ડ)
  *
@@ -937,24 +937,25 @@ const exportCowsExcel = async ({ gaushalaId = null, user = null, date = null } =
     views: [{ showGridLines: true }],
   });
 
-  // Set Column Widths (A to P)
+  // Set Column Widths (A to Q)
   worksheet.columns = [
     { key: 'col1', width: 8 },   // SL. NO.
     { key: 'col2', width: 14 },  // CATTLE ID
     { key: 'col3', width: 18 },  // CATTLE NAME
-    { key: 'col4', width: 14 },  // D.O.B.
-    { key: 'col5', width: 18 },  // Age (YY-MM-DD)
-    { key: 'col6', width: 13 },  // DAM ID
-    { key: 'col7', width: 16 },  // DAM NAME
-    { key: 'col8', width: 13 },  // SIRE ID
-    { key: 'col9', width: 16 },  // SIRE NAME
-    { key: 'col10', width: 10 }, // Calving
-    { key: 'col11', width: 16 }, // LAST D. DATE
-    { key: 'col12', width: 18 }, // D. TIME (yy-mm-dd)
-    { key: 'col13', width: 13 }, // Calf (M/F)
-    { key: 'col14', width: 16 }, // PREG. DATE
-    { key: 'col15', width: 18 }, // PREG. DAYS (yy-mm-dd)
-    { key: 'col16', width: 26 }, // Remark
+    { key: 'col4', width: 16 },  // CATTLE TYPE
+    { key: 'col5', width: 14 },  // D.O.B.
+    { key: 'col6', width: 18 },  // Age (YY-MM-DD)
+    { key: 'col7', width: 13 },  // DAM ID
+    { key: 'col8', width: 16 },  // DAM NAME
+    { key: 'col9', width: 13 },  // SIRE ID
+    { key: 'col10', width: 16 }, // SIRE NAME
+    { key: 'col11', width: 10 }, // Calving
+    { key: 'col12', width: 16 }, // LAST D. DATE
+    { key: 'col13', width: 18 }, // D. TIME (yy-mm-dd)
+    { key: 'col14', width: 13 }, // Calf (M/F)
+    { key: 'col15', width: 16 }, // PREG. DATE
+    { key: 'col16', width: 18 }, // PREG. DAYS (yy-mm-dd)
+    { key: 'col17', width: 26 }, // Remark
   ];
 
   const thinBorder = {
@@ -965,14 +966,14 @@ const exportCowsExcel = async ({ gaushalaId = null, user = null, date = null } =
   };
 
   // Row 1: Title
-  const titleRow = worksheet.addRow(['Gaushala Ayushka _ All Cattle Record', '', '', '', '', '', '', '', '', '', '', '', '', '', '', reportDateStr]);
+  const titleRow = worksheet.addRow(['Gaushala Ayushka _ All Cattle Record', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', reportDateStr]);
   titleRow.height = 30;
-  worksheet.mergeCells('A1:O1');
+  worksheet.mergeCells('A1:P1');
   const titleCell = worksheet.getCell('A1');
   titleCell.font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FF1B5E20' } };
   titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
 
-  const dateCell = worksheet.getCell('P1');
+  const dateCell = worksheet.getCell('Q1');
   dateCell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF333333' } };
   dateCell.alignment = { vertical: 'middle', horizontal: 'right' };
 
@@ -981,6 +982,7 @@ const exportCowsExcel = async ({ gaushalaId = null, user = null, date = null } =
     'ક્રમ',
     'ગાય નંબર',
     'ગાયનું નામ',
+    'ગાયનો પ્રકાર',
     'જન્મ તારીખ',
     'ઉંમર',
     'માતાનો નંબર',
@@ -1009,6 +1011,7 @@ const exportCowsExcel = async ({ gaushalaId = null, user = null, date = null } =
     'SL. NO.',
     'CATTLE ID',
     'CATTLE NAME',
+    'CATTLE TYPE',
     'D.O.B.',
     '….. Age ….. (YY-MM-DD)',
     'DAM ID',
@@ -1095,11 +1098,13 @@ const exportCowsExcel = async ({ gaushalaId = null, user = null, date = null } =
     const damName = cow.dam_id?.calf_name || '';
     const sireId = cow.sair_id?.tag_id || (typeof cow.sair_id === 'string' ? cow.sair_id : '');
     const sireName = cow.sair_id?.calf_name || '';
+    const cattleType = cow.type?.typeName || (typeof cow.type === 'string' ? cow.type : '') || '';
 
     return [
       index + 1,
       cow.tag_id || '',
       cow.calf_name || '',
+      cattleType,
       cow.dob || '',
       age,
       damId,
@@ -1130,7 +1135,7 @@ const exportCowsExcel = async ({ gaushalaId = null, user = null, date = null } =
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgArgb } };
       cell.border = thinBorder;
 
-      if ([3, 7, 9, 16].includes(colNumber)) {
+      if ([3, 4, 8, 10, 17].includes(colNumber)) {
         cell.alignment = { vertical: 'middle', horizontal: 'left' };
       } else {
         cell.alignment = { vertical: 'middle', horizontal: 'center' };
@@ -1147,6 +1152,7 @@ const exportCowsExcel = async ({ gaushalaId = null, user = null, date = null } =
     'ક્રમ',
     'નંદીનો નંબર',
     'નંદીનું નામ',
+    'નંદીનો પ્રકાર',
     'જન્મ તારીખ',
     'ઉંમર',
     'માતાનો નંબર',
@@ -1160,6 +1166,7 @@ const exportCowsExcel = async ({ gaushalaId = null, user = null, date = null } =
     'SL. NO.',
     'BULL ID',
     'CATTLE NAME',
+    'CATTLE TYPE',
     'D.O.B.',
     '….. Age ….. (YY-MM-DD)',
     'DAM ID',
@@ -1193,11 +1200,13 @@ const exportCowsExcel = async ({ gaushalaId = null, user = null, date = null } =
     const damName = bull.dam_id?.calf_name || '';
     const sireId = bull.sair_id?.tag_id || (typeof bull.sair_id === 'string' ? bull.sair_id : '');
     const sireName = bull.sair_id?.calf_name || '';
+    const bullType = bull.type?.typeName || (typeof bull.type === 'string' ? bull.type : '') || '';
 
     const rowValues = [
       idx + 1,
       bull.tag_id || '',
       bull.calf_name || '',
+      bullType,
       bull.dob || '',
       age,
       damId,
@@ -1218,7 +1227,7 @@ const exportCowsExcel = async ({ gaushalaId = null, user = null, date = null } =
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgArgb } };
       cell.border = thinBorder;
 
-      if ([3, 7, 9, 10].includes(colNumber)) {
+      if ([3, 4, 8, 10, 11].includes(colNumber)) {
         cell.alignment = { vertical: 'middle', horizontal: 'left' };
       } else {
         cell.alignment = { vertical: 'middle', horizontal: 'center' };

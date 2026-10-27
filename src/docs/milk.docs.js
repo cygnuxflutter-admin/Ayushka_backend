@@ -18,6 +18,46 @@ const milkPaths = {
       },
     },
   },
+  '/api/v1/milk/matrix': {
+    get: {
+      tags: ['Milk Management'],
+      summary: 'Get cow-wise milk production matrix for date range (max 30 days, Morning & Evening grid)',
+      operationId: 'getMilkProductionMatrix',
+      security: [{ BearerAuth: [] }],
+      parameters: [
+        { name: 'startDate', in: 'query', required: true, schema: { type: 'string' }, description: 'Start date in YYYY-MM-DD format (mandatory)' },
+        { name: 'endDate', in: 'query', required: true, schema: { type: 'string' }, description: 'End date in YYYY-MM-DD format (mandatory, max 30 days after startDate)' },
+        { name: 'gaushalaId', in: 'query', required: false, schema: { type: 'string' }, description: 'Gaushala ID (auto-resolved from token for non-superadmins)' },
+        { name: 'cowId', in: 'query', required: false, schema: { type: 'string' }, description: 'Optional cow ID filter' },
+        { name: 'shedId', in: 'query', required: false, schema: { type: 'string' }, description: 'Optional shed ID filter' },
+        { name: 'includeAllCows', in: 'query', required: false, schema: { type: 'boolean', default: false }, description: 'Include all cows in gaushala even if 0 milk records' },
+        { name: 'format', in: 'query', required: false, schema: { type: 'string', enum: ['json', 'excel'] }, description: 'Set to excel to download .xlsx directly' },
+      ],
+      responses: {
+        '200': { description: 'Milk production matrix fetched or Excel downloaded successfully' },
+        '400': { description: 'Validation error (missing dates, startDate > endDate, or range > 30 days)' },
+      },
+    },
+  },
+  '/api/v1/milk/matrix/export-excel': {
+    get: {
+      tags: ['Milk Management'],
+      summary: 'Export cow-wise milk production matrix as styled Excel spreadsheet (.xlsx)',
+      operationId: 'exportMilkProductionMatrixExcel',
+      security: [{ BearerAuth: [] }],
+      parameters: [
+        { name: 'startDate', in: 'query', required: true, schema: { type: 'string' }, description: 'Start date in YYYY-MM-DD format (mandatory)' },
+        { name: 'endDate', in: 'query', required: true, schema: { type: 'string' }, description: 'End date in YYYY-MM-DD format (mandatory, max 30 days after startDate)' },
+        { name: 'gaushalaId', in: 'query', required: false, schema: { type: 'string' }, description: 'Gaushala ID' },
+        { name: 'cowId', in: 'query', required: false, schema: { type: 'string' }, description: 'Optional cow ID filter' },
+        { name: 'shedId', in: 'query', required: false, schema: { type: 'string' }, description: 'Optional shed ID filter' },
+      ],
+      responses: {
+        '200': { description: 'Excel spreadsheet buffer downloaded successfully' },
+        '400': { description: 'Validation error' },
+      },
+    },
+  },
   '/api/v1/milk/fridge-stock': {
     get: {
       tags: ['Milk Management'],
@@ -29,6 +69,49 @@ const milkPaths = {
       ],
       responses: {
         '200': { description: 'Fridge milk stock fetched successfully' },
+      },
+    },
+  },
+  '/api/v1/milk/import-template': {
+    get: {
+      tags: ['Milk Management'],
+      summary: 'Download dynamic Milk Production Excel Import Template with database dropdowns',
+      operationId: 'downloadMilkImportTemplate',
+      security: [{ BearerAuth: [] }],
+      parameters: [
+        { name: 'gaushalaId', in: 'query', required: false, schema: { type: 'string' }, description: 'Gaushala ID to scope dropdown cattle & workers' },
+        { name: 'date', in: 'query', required: false, schema: { type: 'string' }, description: 'Date (YYYY-MM-DD) to pre-fill rows (defaults to today)' },
+        { name: 'shift', in: 'query', required: false, schema: { type: 'string', enum: ['morning', 'evening'] }, description: 'Default shift to pre-fill rows' },
+      ],
+      responses: {
+        '200': { description: 'Dynamic Excel template downloaded (.xlsx)' },
+      },
+    },
+  },
+  '/api/v1/milk/upload-excel': {
+    post: {
+      tags: ['Milk Management'],
+      summary: 'Bulk import milk production records from Excel or CSV file',
+      operationId: 'importMilkProductionExcel',
+      security: [{ BearerAuth: [] }],
+      requestBody: {
+        required: true,
+        content: {
+          'multipart/form-data': {
+            schema: {
+              type: 'object',
+              required: ['file'],
+              properties: {
+                file: { type: 'string', format: 'binary', description: 'Excel (.xlsx, .xls) or CSV (.csv) file' },
+                gaushalaId: { type: 'string', description: 'Default Gaushala ID (optional, overrides row gaushala)' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        '200': { description: 'Milk production records imported successfully' },
+        '400': { description: 'Bad request or parsing error' },
       },
     },
   },
